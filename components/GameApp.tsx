@@ -917,7 +917,7 @@ export default function GameApp() {
         {/* Main content */}
         <div className="relative z-10 flex flex-col items-center max-w-sm text-center">
           {/* App icon */}
-          <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-[32px] flex items-center justify-center mb-8 shadow-2xl border border-white/20 animate-bounce" style={{ animationDuration: '2s' }}>
+          <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-[32px] flex items-center justify-center mb-8 shadow-2xl border border-white/20">
             <Footprints className="w-12 h-12 text-blue-300" />
           </div>
           
@@ -1011,41 +1011,9 @@ export default function GameApp() {
         checkpoints={checkpoints}
         previewLocation={previewLocation}
         onCheckpointClick={handleCheckpointClick}
-        onMapClick={async latlng => {
+        onMapClick={latlng => {
           if (isAddingLocation) {
-            // Fetch nearby places
-            setIsLoadingPlaces(true);
-            try {
-              const places = await placeService.getAllNearby(latlng.lat, latlng.lng, 200, 10);
-              setNearbyPlaces(places);
-              setShowPlaceSelector(places.length > 0);
-              if (places.length === 0) {
-                setToast({ 
-                  message: 'No nearby places found. You can still create a custom checkpoint.', 
-                  type: 'info' 
-                });
-              }
-            } catch (error) {
-              console.error('Failed to fetch nearby places:', error);
-              setNearbyPlaces([]);
-              setShowPlaceSelector(false);
-              // Show user-friendly error message
-              const errorMessage = error instanceof Error ? error.message : 'Failed to load nearby places';
-              if (errorMessage.includes('timeout') || errorMessage.includes('504')) {
-                setToast({ 
-                  message: 'Place search timed out. You can still create a custom checkpoint manually.', 
-                  type: 'warning' 
-                });
-              } else {
-                setToast({ 
-                  message: 'Unable to load nearby places. You can still create a custom checkpoint.', 
-                  type: 'warning' 
-                });
-              }
-            } finally {
-              setIsLoadingPlaces(false);
-            }
-            
+            // Immediately show the editor modal for instant feedback
             setEditorTarget({
               id: Date.now().toString(),
               location: latlng,
@@ -1066,6 +1034,42 @@ export default function GameApp() {
                 goalDescription: '',
               },
             });
+            
+            // Fetch nearby places asynchronously in the background
+            // This won't block the UI from showing the modal
+            (async () => {
+              setIsLoadingPlaces(true);
+              try {
+                const places = await placeService.getAllNearby(latlng.lat, latlng.lng, 200, 10);
+                setNearbyPlaces(places);
+                setShowPlaceSelector(places.length > 0);
+                if (places.length === 0) {
+                  setToast({ 
+                    message: 'No nearby places found. You can still create a custom checkpoint.', 
+                    type: 'info' 
+                  });
+                }
+              } catch (error) {
+                console.error('Failed to fetch nearby places:', error);
+                setNearbyPlaces([]);
+                setShowPlaceSelector(false);
+                // Show user-friendly error message
+                const errorMessage = error instanceof Error ? error.message : 'Failed to load nearby places';
+                if (errorMessage.includes('timeout') || errorMessage.includes('504')) {
+                  setToast({ 
+                    message: 'Place search timed out. You can still create a custom checkpoint manually.', 
+                    type: 'warning' 
+                  });
+                } else {
+                  setToast({ 
+                    message: 'Unable to load nearby places. You can still create a custom checkpoint.', 
+                    type: 'warning' 
+                  });
+                }
+              } finally {
+                setIsLoadingPlaces(false);
+              }
+            })();
           }
         }}
         isMoving={isMoving}
@@ -1774,14 +1778,14 @@ export default function GameApp() {
       {/* Checkpoint Editor Modal */}
       {editorTarget && (
         <div 
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => {
             setEditorTarget(null);
             setIsAddingLocation(false);
           }}
         >
           <div 
-            className="bg-white w-full max-w-md max-h-[85vh] rounded-2xl shadow-[0_4px_12px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col relative"
+            className="bg-white w-full max-w-md max-h-[85vh] rounded-2xl shadow-[0_4px_12px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col relative animate-slide-up-fade-in"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
