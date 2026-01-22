@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes slide-down {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 20px 100%;
+  }
+}
+
+.animate-weather-rain {
+  animation: slide-down 0.5s linear infinite;
+}
+
+.animate-weather-storm {
+  animation: slide-down 0.2s linear infinite;
+}
+
+.animate-weather-snow {
+  animation: slide-down 5s linear infinite;
+}
