@@ -177,3 +177,15 @@ export const DIFFICULTY_CONFIG: Record<DifficultyLevel, DifficultyConfig> = {
 
 // Note: CHECKPOINTS and STORIES are now exported from './stories.ts'
 // All checkpoint definitions have been moved to constants/stories.ts
+
+// ========== Exploration Mode Initial Checkpoints (LA Hollywood) ==========
+// Hollywood Sign area: ~34.1341° N, 118.3215° W
+export const LA_HOLLYWOOD_CENTER: LatLng = { lat: 34.1341, lng: -118.3215 };
+
+// Fixed IDs for initial exploration checkpoints - these will only be generated once
+export const EXPLORATION_INITIAL_CHECKPOINT_IDS = [
+  'exploration-init-hollywood-sign',
+  'exploration-init-walk-of-fame',
+  'exploration-init-chinese-theatre',
+  'exploration-init-griffith-observatory',
+] as const;

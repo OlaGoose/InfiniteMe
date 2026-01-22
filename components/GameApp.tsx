@@ -46,6 +46,7 @@ import Joystick from './Joystick';
 import Toast, { ToastType } from './Toast';
 import SelectionToolbar from './SelectionToolbar';
 import FlashcardDeck from './FlashcardDeck';
+import MediaIntro from './MediaIntro';
 import {
   LatLng,
   UserStats,
@@ -70,7 +71,10 @@ import {
   WEATHER_CONFIG,
   CHECKPOINTS,
   STORIES,
+  LA_HOLLYWOOD_CENTER,
+  EXPLORATION_INITIAL_CHECKPOINT_IDS,
 } from '@/constants';
+import { EXPLORATION_INITIAL_CHECKPOINTS } from '@/constants/exploration';
 import { computeDestinationPoint } from '@/utils/geo';
 import { storageService } from '@/lib/supabase/storage';
 import * as GeminiService from '@/lib/gemini/service';
@@ -132,6 +136,7 @@ export default function GameApp() {
   const [nearbyPlaces, setNearbyPlaces] = useState<PlaceInfo[]>([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
   const [showPlaceSelector, setShowPlaceSelector] = useState(false);
+  const [showMediaIntro, setShowMediaIntro] = useState<Checkpoint | null>(null);
   const [interimVoiceText, setInterimVoiceText] = useState(''); // ⭐ 临时语音识别文本
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
   const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
@@ -202,13 +207,13 @@ export default function GameApp() {
       setFlashcards(loadedFlashcards);
       setHistory(loadedHistory);
       
-      // If we have exploration checkpoints (not story checkpoints), mark as initialized
+      // If we have exploration initial checkpoints, mark as initialized
       if (loadedCheckpoints.length > 0) {
-        const hasStoryCheckpoints = loadedCheckpoints.some(cp => cp.storyId);
-        const hasDefaultLondon = loadedCheckpoints.some(cp => cp.id === 'big-ben');
+        const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.some(id =>
+          loadedCheckpoints.some(cp => cp.id === id)
+        );
         
-        // If we have non-story checkpoints (exploration mode), mark as initialized
-        if (!hasStoryCheckpoints && !hasDefaultLondon) {
+        if (hasInitialCheckpoints) {
           setExplorationInitialized(true);
         }
       }
@@ -412,18 +417,41 @@ export default function GameApp() {
             // Save to storage
             await storageService.saveCheckpoints(storyCheckpoints);
           } else if (gameMode === 'exploration') {
-            // Update user location in stats
-            if (stats) {
-              setStats(prev => prev ? { ...prev, currentLocation: userPos } : null);
+            // Exploration mode: Initialize with fixed LA Hollywood checkpoints
+            const currentCheckpoints = checkpointsRef.current;
+            
+            // Check if we already have the initial checkpoints
+            const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.every(id =>
+              currentCheckpoints.some(cp => cp.id === id)
+            );
+            
+            // Check for old exploration checkpoints (not story, not fixed IDs)
+            const hasOldExplorationCheckpoints = currentCheckpoints.some(cp =>
+              !cp.storyId && !EXPLORATION_INITIAL_CHECKPOINT_IDS.includes(cp.id as any)
+            );
+            
+            if (!hasInitialCheckpoints || hasOldExplorationCheckpoints) {
+              // Clear old exploration checkpoints and initialize with fixed LA Hollywood checkpoints
+              const initialCheckpoints: Checkpoint[] = EXPLORATION_INITIAL_CHECKPOINTS.map(cp => ({
+                ...cp,
+                isUnlocked: true,
+                isCompleted: false,
+              }));
+              setCheckpoints(initialCheckpoints);
+              await storageService.saveCheckpoints(initialCheckpoints);
+              setExplorationInitialized(true);
+              
+              if (hasOldExplorationCheckpoints) {
+                setToast({ 
+                  message: 'Exploration mode updated! Welcome to LA Hollywood!', 
+                  type: 'success' 
+                });
+              }
             }
             
-            // Exploration mode: Only generate if not already initialized
-            const currentCheckpoints = checkpointsRef.current;
-            const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
-            
-            if (!explorationInitialized && !hasStoredCheckpoints) {
-              await generateLocalLevels(userPos);
-              setExplorationInitialized(true);
+            // Set user location to LA Hollywood center
+            if (stats) {
+              setStats(prev => prev ? { ...prev, currentLocation: LA_HOLLYWOOD_CENTER } : null);
             }
           }
         },
@@ -450,13 +478,41 @@ export default function GameApp() {
             
             storageService.saveCheckpoints(storyCheckpoints);
           } else if (gameMode === 'exploration') {
-            // Exploration mode: Only generate if not already initialized
+            // Exploration mode: Initialize with fixed LA Hollywood checkpoints
             const currentCheckpoints = checkpointsRef.current;
-            const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
             
-            if (!explorationInitialized && !hasStoredCheckpoints && stats) {
-              generateLocalLevels(stats.currentLocation);
+            // Check if we already have the initial checkpoints
+            const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.every(id =>
+              currentCheckpoints.some(cp => cp.id === id)
+            );
+            
+            // Check for old exploration checkpoints (not story, not fixed IDs)
+            const hasOldExplorationCheckpoints = currentCheckpoints.some(cp =>
+              !cp.storyId && !EXPLORATION_INITIAL_CHECKPOINT_IDS.includes(cp.id as any)
+            );
+            
+            if (!hasInitialCheckpoints || hasOldExplorationCheckpoints) {
+              // Clear old exploration checkpoints and initialize with fixed LA Hollywood checkpoints
+              const initialCheckpoints: Checkpoint[] = EXPLORATION_INITIAL_CHECKPOINTS.map(cp => ({
+                ...cp,
+                isUnlocked: true,
+                isCompleted: false,
+              }));
+              setCheckpoints(initialCheckpoints);
+              storageService.saveCheckpoints(initialCheckpoints);
               setExplorationInitialized(true);
+              
+              if (hasOldExplorationCheckpoints) {
+                setToast({ 
+                  message: 'Exploration mode updated! Welcome to LA Hollywood!', 
+                  type: 'success' 
+                });
+              }
+            }
+            
+            // Set user location to LA Hollywood center
+            if (stats) {
+              setStats(prev => prev ? { ...prev, currentLocation: LA_HOLLYWOOD_CENTER } : null);
             }
           }
         },
@@ -484,13 +540,41 @@ export default function GameApp() {
         
         storageService.saveCheckpoints(storyCheckpoints);
       } else if (gameMode === 'exploration') {
-        // Exploration mode: Only generate if not already initialized
+        // Exploration mode: Initialize with fixed LA Hollywood checkpoints
         const currentCheckpoints = checkpointsRef.current;
-        const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
         
-        if (!explorationInitialized && !hasStoredCheckpoints && stats) {
-          generateLocalLevels(stats.currentLocation);
+        // Check if we already have the initial checkpoints
+        const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.every(id =>
+          currentCheckpoints.some(cp => cp.id === id)
+        );
+        
+        // Check for old exploration checkpoints (not story, not fixed IDs)
+        const hasOldExplorationCheckpoints = currentCheckpoints.some(cp =>
+          !cp.storyId && !EXPLORATION_INITIAL_CHECKPOINT_IDS.includes(cp.id as any)
+        );
+        
+        if (!hasInitialCheckpoints || hasOldExplorationCheckpoints) {
+          // Clear old exploration checkpoints and initialize with fixed LA Hollywood checkpoints
+          const initialCheckpoints: Checkpoint[] = EXPLORATION_INITIAL_CHECKPOINTS.map(cp => ({
+            ...cp,
+            isUnlocked: true,
+            isCompleted: false,
+          }));
+          setCheckpoints(initialCheckpoints);
+          storageService.saveCheckpoints(initialCheckpoints);
           setExplorationInitialized(true);
+          
+          if (hasOldExplorationCheckpoints) {
+            setToast({ 
+              message: 'Exploration mode updated! Welcome to LA Hollywood!', 
+              type: 'success' 
+            });
+          }
+        }
+        
+        // Set user location to LA Hollywood center
+        if (stats) {
+          setStats(prev => prev ? { ...prev, currentLocation: LA_HOLLYWOOD_CENTER } : null);
         }
       }
     }
@@ -783,8 +867,16 @@ export default function GameApp() {
     const leafletModule = await import('leaflet');
     const L = leafletModule.default || leafletModule;
     const dist = L.latLng(stats.currentLocation).distanceTo(L.latLng(cp.location));
-    if (dist <= INTERACTION_RADIUS_METERS) openDialog(cp);
-    else setToast({ message: `${cp.name} is too far.`, type: 'warning' });
+    if (dist <= INTERACTION_RADIUS_METERS) {
+      // If checkpoint has media introduction, show it first
+      if (cp.mediaIntro) {
+        setShowMediaIntro(cp);
+      } else {
+        openDialog(cp);
+      }
+    } else {
+      setToast({ message: `${cp.name} is too far.`, type: 'warning' });
+    }
   };
 
   const sendMessageImpl = async (text: string) => {
@@ -2660,6 +2752,19 @@ export default function GameApp() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Media Introduction Modal */}
+      {showMediaIntro && showMediaIntro.mediaIntro && (
+        <MediaIntro
+          media={showMediaIntro.mediaIntro}
+          onClose={() => setShowMediaIntro(null)}
+          onComplete={() => {
+            const checkpoint = showMediaIntro;
+            setShowMediaIntro(null);
+            openDialog(checkpoint);
+          }}
+        />
       )}
 
       {/* Flashcard Deck Modal */}

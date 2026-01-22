@@ -29,6 +29,20 @@ export interface Story {
   checkpoints: Omit<Checkpoint, 'isUnlocked' | 'isCompleted'>[];
 }
 
+// Media content types for checkpoint introduction
+export type MediaType = 'video' | 'audio' | 'images' | 'text' | 'youtube';
+
+export interface MediaContent {
+  type: MediaType;
+  url?: string; // OSS URL for video/audio/text file
+  urls?: string[]; // OSS URLs for image carousel
+  youtubeId?: string; // YouTube video ID
+  title?: string;
+  description?: string;
+  duration?: number; // Duration in seconds (for video/audio)
+  autoPlay?: boolean; // Auto play media
+}
+
 export interface Checkpoint {
   id: string;
   name: string;
@@ -42,6 +56,8 @@ export interface Checkpoint {
   customMarkerImage?: string;
   isUnlocked: boolean;
   isCompleted: boolean;
+  // Media introduction before dialog
+  mediaIntro?: MediaContent;
   // Story mode fields
   storyId?: StoryId; // Which story this checkpoint belongs to (undefined for exploration mode)
   order?: number; // Order in the story (for linear unlocking)
