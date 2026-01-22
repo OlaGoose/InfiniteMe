@@ -72,15 +72,9 @@ import { computeDestinationPoint } from '@/utils/geo';
 import { storageService } from '@/lib/supabase/storage';
 import * as GeminiService from '@/lib/gemini/service';
 import { placeService, PlaceInfo } from '@/lib/places/service';
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
 
 const MAX_DRAG_DISTANCE = 150;
-
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
 
 export default function GameApp() {
   const [hasStarted, setHasStarted] = useState(false);
@@ -132,7 +126,7 @@ export default function GameApp() {
   const [nearbyPlaces, setNearbyPlaces] = useState<PlaceInfo[]>([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
   const [showPlaceSelector, setShowPlaceSelector] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [interimVoiceText, setInterimVoiceText] = useState(''); // ⭐ 临时语音识别文本
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
   const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
   const [optimizingMessageId, setOptimizingMessageId] = useState<string | null>(null);
@@ -155,7 +149,38 @@ export default function GameApp() {
   useEffect(() => {
     checkpointsRef.current = checkpoints;
   }, [checkpoints]);
-  const recognitionRef = useRef<any>(null);
+  
+  // ⭐ 使用 ref 追踪最新的 inputText，避免闭包陷阱
+  const inputTextRef = useRef(inputText);
+  useEffect(() => {
+    inputTextRef.current = inputText;
+  }, [inputText]);
+
+  // ⭐ 完善的语音识别 Hook - 支持实时反馈
+  const { 
+    isRecording: isListening, 
+    isSupported: isVoiceSupported, 
+    startRecording: startVoiceRecording, 
+    stopRecording: stopVoiceRecording,
+    error: voiceError 
+  } = useVoiceRecorder({
+    language: 'en-US',
+    onResult: (text) => {
+      // ⭐ 使用 ref 获取最新的输入文本，避免闭包陷阱
+      setInputText(inputTextRef.current + text);
+      // 清空临时文本
+      setInterimVoiceText('');
+    },
+    onInterimResult: (text) => {
+      // 实时临时结果 - 仅用于显示，不修改实际 inputText
+      setInterimVoiceText(text);
+    },
+    onError: (error) => {
+      setToast({ message: error, type: 'error' });
+      setInterimVoiceText('');
+    },
+    preventDuplicates: true,
+  });
 
   // Initialize data
   useEffect(() => {
@@ -428,24 +453,12 @@ export default function GameApp() {
     return () => clearInterval(penaltyInterval);
   }, [weather, stats]);
 
-  // Speech recognition
+  // Voice error notification
   useEffect(() => {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setIsListening(false);
-        if (transcript) {
-          setInputText(transcript);
-        }
-      };
-      recognitionRef.current.onend = () => setIsListening(false);
+    if (voiceError) {
+      console.error('Voice error:', voiceError);
     }
-  }, []);
+  }, [voiceError]);
 
   // Real pedometer using device motion sensors
   useEffect(() => {
@@ -843,12 +856,15 @@ export default function GameApp() {
     }
   };
 
-  const handleStartListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.start();
-      setIsListening(true);
+  const handleVoiceToggle = () => {
+    if (isListening) {
+      stopVoiceRecording();
     } else {
-      setToast({ message: 'Speech recognition not supported on this device.', type: 'error' });
+      if (!isVoiceSupported) {
+        setToast({ message: 'Speech recognition not supported on this device.', type: 'error' });
+        return;
+      }
+      startVoiceRecording();
     }
   };
 
@@ -1549,33 +1565,80 @@ export default function GameApp() {
                     ))}
                   </div>
                 )}
-              <div className="bg-white p-1.5 rounded-[28px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-gray-100 flex items-center gap-2 relative transition-transform focus-within:scale-[1.02]">
+              <div className={`bg-white p-1.5 rounded-[28px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] border flex items-center gap-2 relative transition-all ${
+                isListening 
+                  ? 'border-blue-300 ring-2 ring-blue-100/50 scale-[1.02]' 
+                  : 'border-gray-100 focus-within:scale-[1.02]'
+              }`}>
                 <button
-                  onClick={isListening ? () => {} : handleStartListening}
+                  onClick={handleVoiceToggle}
                   className={`p-3 rounded-full transition-all ${
-                    isListening ? 'bg-red-50 text-red-500 animate-pulse' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+                    isListening 
+                      ? 'bg-blue-50/80 text-blue-600' 
+                      : 'text-gray-400 hover:bg-gray-50 hover:text-blue-600'
                   }`}
                 >
                   <Mic className="w-5 h-5" />
                 </button>
-                <input
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-base text-gray-800 placeholder-gray-400 font-medium p-2"
-                  placeholder={isListening ? 'Listening...' : 'Ask...'}
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      if (inputText.trim()) {
-                        sendMessageImpl(inputText);
+                
+                <div className="flex-1 relative">
+                  <input
+                    className="w-full bg-transparent border-none focus:ring-0 text-base text-gray-800 placeholder-gray-400 font-medium p-2"
+                    placeholder={isListening ? 'Listening...' : 'Ask...'}
+                    value={inputText + interimVoiceText}
+                    onChange={e => {
+                      // ⭐ 只更新确认的文本部分
+                      const newValue = e.target.value;
+                      if (interimVoiceText && newValue.endsWith(interimVoiceText)) {
+                        setInputText(newValue.slice(0, -interimVoiceText.length));
+                      } else {
+                        setInputText(newValue);
                       }
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        // ⭐ 如果有临时文本，先确认
+                        const fullText = (inputText + interimVoiceText).trim();
+                        if (fullText) {
+                          if (interimVoiceText) {
+                            setInputText(fullText);
+                            setInterimVoiceText('');
+                          }
+                          if (isListening) {
+                            stopVoiceRecording();
+                          }
+                          sendMessageImpl(fullText);
+                        }
+                      }
+                    }}
+                  />
+                  {/* ⭐ 临时文本指示 - 显示正在识别中 */}
+                  {isListening && interimVoiceText && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-blue-500">
+                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
+                      <span className="italic opacity-75">recognizing...</span>
+                    </div>
+                  )}
+                </div>
+                
+                <button
+                  onClick={() => {
+                    // ⭐ 如果有临时文本，先确认再发送
+                    const fullText = (inputText + interimVoiceText).trim();
+                    if (fullText) {
+                      if (interimVoiceText) {
+                        setInputText(fullText);
+                        setInterimVoiceText('');
+                      }
+                      if (isListening) {
+                        stopVoiceRecording();
+                      }
+                      sendMessageImpl(fullText);
                     }
                   }}
-                />
-                <button
-                  onClick={() => inputText.trim() && sendMessageImpl(inputText)}
-                  disabled={!inputText.trim()}
+                  disabled={!inputText.trim() && !interimVoiceText.trim()}
                   className={`px-5 py-3 rounded-[22px] font-bold text-sm transition-all flex items-center gap-1 ${
-                    inputText.trim()
+                    inputText.trim() || interimVoiceText.trim()
                       ? 'bg-gray-900 text-white hover:bg-black hover:shadow-lg active:scale-95'
                       : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   }`}
