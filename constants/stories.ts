@@ -57,6 +57,13 @@ Remember: Speak like talking to a child. Short sentences. Repeat important words
     image: 'https://picsum.photos/id/9/400/300',
     storyId: 'london-journey',
     order: 1,
+    mediaIntro: {
+      type: 'youtube',
+      youtubeId: 'NSF9Ab3z1yU',  // 替换为实际的视频ID
+      title: 'Welcome to Heathrow Airport',
+      description: 'Learn about Heathrow Airport before starting your conversation.',
+      autoPlay: true,  // 自动播放
+    },
   },
   {
     id: 'london-2-hotel-reception',

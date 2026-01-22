@@ -38,13 +38,15 @@ export default function MediaIntro({ media, onClose, onComplete }: MediaIntroPro
 
   const nextImage = () => {
     if (media.urls && media.urls.length > 0) {
-      setCurrentImageIndex((prev) => (prev + 1) % media.urls.length);
+      const urlsLength = media.urls.length;
+      setCurrentImageIndex((prev) => (prev + 1) % urlsLength);
     }
   };
 
   const prevImage = () => {
     if (media.urls && media.urls.length > 0) {
-      setCurrentImageIndex((prev) => (prev - 1 + media.urls.length) % media.urls.length);
+      const urlsLength = media.urls.length;
+      setCurrentImageIndex((prev) => (prev - 1 + urlsLength) % urlsLength);
     }
   };
 
