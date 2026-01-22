@@ -83,6 +83,7 @@ export default function GameApp() {
   const [hasStarted, setHasStarted] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode | null>(null); // null = not selected yet
   const [selectedStory, setSelectedStory] = useState<StoryId | null>(null);
+  const [explorationInitialized, setExplorationInitialized] = useState(false); // Track if exploration mode has been initialized
   const [stats, setStats] = useState<UserStats | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
@@ -200,6 +201,17 @@ export default function GameApp() {
       setCheckpoints(loadedCheckpoints);
       setFlashcards(loadedFlashcards);
       setHistory(loadedHistory);
+      
+      // If we have exploration checkpoints (not story checkpoints), mark as initialized
+      if (loadedCheckpoints.length > 0) {
+        const hasStoryCheckpoints = loadedCheckpoints.some(cp => cp.storyId);
+        const hasDefaultLondon = loadedCheckpoints.some(cp => cp.id === 'big-ben');
+        
+        // If we have non-story checkpoints (exploration mode), mark as initialized
+        if (!hasStoryCheckpoints && !hasDefaultLondon) {
+          setExplorationInitialized(true);
+        }
+      }
     };
     loadData();
   }, []);
@@ -378,11 +390,6 @@ export default function GameApp() {
           const { latitude, longitude } = position.coords;
           const userPos = { lat: latitude, lng: longitude };
           
-          // Update user location in stats
-          if (stats) {
-            setStats(prev => prev ? { ...prev, currentLocation: userPos } : null);
-          }
-          
           setHasStarted(true);
           
           // Initialize checkpoints based on mode
@@ -395,17 +402,28 @@ export default function GameApp() {
               isCompleted: false,
             }));
             setCheckpoints(storyCheckpoints);
+            
+            // Position user at the first story checkpoint location
+            const firstCheckpoint = story.checkpoints[0];
+            if (firstCheckpoint && stats) {
+              setStats(prev => prev ? { ...prev, currentLocation: firstCheckpoint.location } : null);
+            }
+            
             // Save to storage
             await storageService.saveCheckpoints(storyCheckpoints);
           } else if (gameMode === 'exploration') {
-            // Exploration mode: Generate local levels
-            const currentCheckpoints = checkpointsRef.current;
-            const leafletModule = await import('leaflet');
-            const L = leafletModule.default || leafletModule;
-            const isDefaultLondon = currentCheckpoints.some(cp => cp.id === 'big-ben');
+            // Update user location in stats
+            if (stats) {
+              setStats(prev => prev ? { ...prev, currentLocation: userPos } : null);
+            }
             
-            if (currentCheckpoints.length === 0 || isDefaultLondon) {
-              generateLocalLevels(userPos);
+            // Exploration mode: Only generate if not already initialized
+            const currentCheckpoints = checkpointsRef.current;
+            const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
+            
+            if (!explorationInitialized && !hasStoredCheckpoints) {
+              await generateLocalLevels(userPos);
+              setExplorationInitialized(true);
             }
           }
         },
@@ -423,10 +441,22 @@ export default function GameApp() {
               isCompleted: false,
             }));
             setCheckpoints(storyCheckpoints);
+            
+            // Position user at the first story checkpoint location
+            const firstCheckpoint = story.checkpoints[0];
+            if (firstCheckpoint && stats) {
+              setStats(prev => prev ? { ...prev, currentLocation: firstCheckpoint.location } : null);
+            }
+            
             storageService.saveCheckpoints(storyCheckpoints);
           } else if (gameMode === 'exploration') {
-            if (checkpointsRef.current.length === 0 && stats) {
+            // Exploration mode: Only generate if not already initialized
+            const currentCheckpoints = checkpointsRef.current;
+            const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
+            
+            if (!explorationInitialized && !hasStoredCheckpoints && stats) {
               generateLocalLevels(stats.currentLocation);
+              setExplorationInitialized(true);
             }
           }
         },
@@ -445,10 +475,22 @@ export default function GameApp() {
           isCompleted: false,
         }));
         setCheckpoints(storyCheckpoints);
+        
+        // Position user at the first story checkpoint location
+        const firstCheckpoint = story.checkpoints[0];
+        if (firstCheckpoint && stats) {
+          setStats(prev => prev ? { ...prev, currentLocation: firstCheckpoint.location } : null);
+        }
+        
         storageService.saveCheckpoints(storyCheckpoints);
       } else if (gameMode === 'exploration') {
-        if (checkpointsRef.current.length === 0 && stats) {
+        // Exploration mode: Only generate if not already initialized
+        const currentCheckpoints = checkpointsRef.current;
+        const hasStoredCheckpoints = currentCheckpoints.length > 0 && !currentCheckpoints.some(cp => cp.id === 'big-ben');
+        
+        if (!explorationInitialized && !hasStoredCheckpoints && stats) {
           generateLocalLevels(stats.currentLocation);
+          setExplorationInitialized(true);
         }
       }
     }
@@ -1031,17 +1073,22 @@ export default function GameApp() {
               
               {/* Story Mode Button */}
               <button
-                onClick={() => setGameMode('story')}
+                onClick={() => {
+                  setGameMode('story');
+                  setExplorationInitialized(false);
+                }}
                 className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
               >
                 <BookOpen className="w-5 h-5" />
                 Story Mode
                 <span className="text-xs text-blue-200/80 ml-auto">Guided Journey</span>
               </button>
-              
+
               {/* Exploration Mode Button */}
               <button
-                onClick={() => setGameMode('exploration')}
+                onClick={() => {
+                  setGameMode('exploration');
+                }}
                 className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
               >
                 <Globe className="w-5 h-5" />
@@ -1057,6 +1104,7 @@ export default function GameApp() {
                   onClick={() => {
                     setGameMode(null);
                     setSelectedStory(null);
+                    setExplorationInitialized(false);
                   }}
                   className="text-blue-200/80 hover:text-white transition-colors"
                 >
@@ -1103,6 +1151,7 @@ export default function GameApp() {
                     onClick={() => {
                       setGameMode(null);
                       setSelectedStory(null);
+                      setExplorationInitialized(false);
                     }}
                     className="text-xs text-blue-200/80 hover:text-white transition-colors"
                   >
@@ -1192,7 +1241,7 @@ export default function GameApp() {
       <Map
         userLocation={stats.currentLocation}
         userAvatar={stats.avatarImage}
-        checkpoints={checkpoints}
+        checkpoints={gameMode === 'story' ? checkpoints.filter(cp => cp.isUnlocked) : checkpoints}
         previewLocation={previewLocation}
         onCheckpointClick={handleCheckpointClick}
         onMapClick={latlng => {
