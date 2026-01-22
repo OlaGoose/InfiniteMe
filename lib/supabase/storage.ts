@@ -1,22 +1,26 @@
+/**
+ * Supabase Storage Service
+ * 
+ * Centralized service for all database operations including:
+ * - User stats management
+ * - Checkpoints CRUD operations
+ * - Flashcards management with Anki SM-2 algorithm support
+ * - Event history tracking
+ * 
+ * Features:
+ * - Automatic fallback to local defaults when Supabase is not configured
+ * - Graceful error handling with detailed logging
+ * - Type-safe database operations
+ * - Optimized batch operations
+ */
+
 import { supabase } from './client';
 import { UserStats, Checkpoint, Flashcard, EventRecord } from '@/types';
 import { CHECKPOINTS, INITIAL_LOCATION } from '@/constants';
 
-const getUserId = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  // Try to get from localStorage or generate a persistent ID
-  try {
-    let userId = localStorage.getItem('step_trek_user_id');
-    if (!userId) {
-      userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('step_trek_user_id', userId);
-    }
-    return userId;
-  } catch (error) {
-    console.warn('Failed to access localStorage:', error);
-    return null;
-  }
-};
+// Constants
+const USER_ID_KEY = 'step_trek_user_id';
+const NOT_FOUND_ERROR_CODE = 'PGRST116';
 
 const INITIAL_STATS: UserStats = {
   totalSteps: 5000,
@@ -29,18 +33,101 @@ const INITIAL_STATS: UserStats = {
   inventory: [],
 };
 
+/**
+ * Get or create a persistent user ID from localStorage
+ * @returns User ID string or null if not in browser environment
+ */
+const getUserId = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  
+  try {
+    let userId = localStorage.getItem(USER_ID_KEY);
+    if (!userId) {
+      // Generate a unique user ID
+      userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem(USER_ID_KEY, userId);
+    }
+    return userId;
+  } catch (error) {
+    console.warn('Failed to access localStorage:', error);
+    return null;
+  }
+};
+
+/**
+ * Check if Supabase is properly configured
+ * @returns true if Supabase URL is configured
+ */
+const isSupabaseConfigured = (): boolean => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return Boolean(supabaseUrl && supabaseUrl !== '');
+};
+
+/**
+ * Transform database checkpoint to application checkpoint format
+ */
+const transformCheckpointFromDb = (cp: any): Checkpoint => ({
+  id: cp.id,
+  name: cp.name,
+  type: cp.type as Checkpoint['type'],
+  location: cp.location as { lat: number; lng: number },
+  difficulty: cp.difficulty as Checkpoint['difficulty'],
+  scenario: cp.scenario,
+  npcRole: cp.npc_role,
+  dialogPrompt: cp.dialog_prompt,
+  image: cp.image,
+  customMarkerImage: cp.custom_marker_image || undefined,
+  isUnlocked: cp.is_unlocked,
+  isCompleted: cp.is_completed,
+  challengeConfig: cp.challenge_config || undefined,
+  shopConfig: cp.shop_config || undefined,
+});
+
+/**
+ * Transform application checkpoint to database format
+ */
+const transformCheckpointToDb = (cp: Checkpoint, userId: string) => ({
+  id: cp.id,
+  user_id: userId,
+  name: cp.name,
+  type: cp.type || 'chat',
+  location: cp.location,
+  difficulty: cp.difficulty,
+  scenario: cp.scenario,
+  npc_role: cp.npcRole,
+  dialog_prompt: cp.dialogPrompt,
+  image: cp.image,
+  custom_marker_image: cp.customMarkerImage || null,
+  is_unlocked: cp.isUnlocked,
+  is_completed: cp.isCompleted,
+  challenge_config: cp.challengeConfig || null,
+  shop_config: cp.shopConfig || null,
+});
+
+/**
+ * Get default checkpoints with unlocked and completed flags
+ */
+const getDefaultCheckpoints = (): Checkpoint[] => {
+  return CHECKPOINTS.map(cp => ({
+    ...cp,
+    isUnlocked: true,
+    isCompleted: false,
+  }));
+};
+
+/**
+ * Storage service for all database operations
+ */
 export const storageService = {
+  // ==================== User Stats ====================
+  
+  /**
+   * Get user statistics
+   * Creates initial stats if user doesn't exist
+   */
   async getStats(): Promise<UserStats> {
     const userId = getUserId();
-    if (!userId) {
-      // Return initial stats if not in browser environment
-      return { ...INITIAL_STATS };
-    }
-
-    // Check if Supabase is configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl === '') {
-      // Return initial stats if Supabase not configured
+    if (!userId || !isSupabaseConfigured()) {
       return { ...INITIAL_STATS };
     }
 
@@ -52,14 +139,13 @@ export const storageService = {
         .single();
 
       if (error) {
-        // Check if it's a "not found" error (PGRST116)
-        if (error.code === 'PGRST116' || error.message?.includes('No rows')) {
-          // Create initial stats if not exists
+        // Create initial stats if user doesn't exist
+        if (error.code === NOT_FOUND_ERROR_CODE || error.message?.includes('No rows')) {
           const initialStats = { ...INITIAL_STATS };
           await this.saveStats(initialStats);
           return initialStats;
         }
-        // For other errors, log and return initial stats
+        
         console.warn('Error fetching stats:', {
           message: error.message,
           code: error.code,
@@ -91,11 +177,14 @@ export const storageService = {
     }
   },
 
-  async saveStats(stats: UserStats): Promise<void> {
+  /**
+   * Save user statistics
+   * Uses upsert to create or update user stats
+   */
+  async saveStats(stats: UserStats): Promise<boolean> {
     const userId = getUserId();
-    if (!userId) {
-      // Silently fail if not in browser environment
-      return;
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
     }
 
     try {
@@ -122,32 +211,26 @@ export const storageService = {
           details: error.details,
           hint: error.hint,
         });
+        return false;
       }
+
+      return true;
     } catch (error) {
       console.warn('Unexpected error in saveStats:', error);
+      return false;
     }
   },
 
+  // ==================== Checkpoints ====================
+
+  /**
+   * Get all checkpoints for the current user
+   * Initializes with default checkpoints if none exist
+   */
   async getCheckpoints(): Promise<Checkpoint[]> {
     const userId = getUserId();
-    if (!userId) {
-      // Return default checkpoints if not in browser environment
-      return CHECKPOINTS.map(cp => ({
-        ...cp,
-        isUnlocked: true,
-        isCompleted: false,
-      }));
-    }
-
-    // Check if Supabase is configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl === '') {
-      // Return default checkpoints if Supabase not configured
-      return CHECKPOINTS.map(cp => ({
-        ...cp,
-        isUnlocked: true,
-        isCompleted: false,
-      }));
+    if (!userId || !isSupabaseConfigured()) {
+      return getDefaultCheckpoints();
     }
 
     try {
@@ -165,80 +248,38 @@ export const storageService = {
           hint: error.hint,
         });
         // Initialize with default checkpoints
-        const initialCheckpoints = CHECKPOINTS.map(cp => ({
-          ...cp,
-          isUnlocked: true,
-          isCompleted: false,
-        }));
+        const initialCheckpoints = getDefaultCheckpoints();
         await this.saveCheckpoints(initialCheckpoints);
         return initialCheckpoints;
       }
 
       if (!data || data.length === 0) {
         // Initialize with default checkpoints
-        const initialCheckpoints = CHECKPOINTS.map(cp => ({
-          ...cp,
-          isUnlocked: true,
-          isCompleted: false,
-        }));
+        const initialCheckpoints = getDefaultCheckpoints();
         await this.saveCheckpoints(initialCheckpoints);
         return initialCheckpoints;
       }
 
-      return data.map((cp: any) => ({
-        id: cp.id,
-        name: cp.name,
-        type: cp.type as Checkpoint['type'],
-        location: cp.location as { lat: number; lng: number },
-        difficulty: cp.difficulty as Checkpoint['difficulty'],
-        scenario: cp.scenario,
-        npcRole: cp.npc_role,
-        dialogPrompt: cp.dialog_prompt,
-        image: cp.image,
-        customMarkerImage: cp.custom_marker_image || undefined,
-        isUnlocked: cp.is_unlocked,
-        isCompleted: cp.is_completed,
-        challengeConfig: cp.challenge_config || undefined,
-        shopConfig: cp.shop_config || undefined,
-      }));
+      return data.map(transformCheckpointFromDb);
     } catch (error) {
       console.warn('Unexpected error in getCheckpoints:', error);
-      return CHECKPOINTS.map(cp => ({
-        ...cp,
-        isUnlocked: true,
-        isCompleted: false,
-      }));
+      return getDefaultCheckpoints();
     }
   },
 
-  async saveCheckpoints(checkpoints: Checkpoint[]): Promise<void> {
+  /**
+   * Save multiple checkpoints (batch operation)
+   * More efficient for saving all checkpoints at once
+   */
+  async saveCheckpoints(checkpoints: Checkpoint[]): Promise<boolean> {
     const userId = getUserId();
-    if (!userId) {
-      // Silently fail if not in browser environment
-      return;
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
     }
 
     try {
-      const checkpointsToSave = checkpoints.map(cp => ({
-        id: cp.id,
-        user_id: userId,
-        name: cp.name,
-        type: cp.type || 'chat',
-        location: cp.location,
-        difficulty: cp.difficulty,
-        scenario: cp.scenario,
-        npc_role: cp.npcRole,
-        dialog_prompt: cp.dialogPrompt,
-        image: cp.image,
-        custom_marker_image: cp.customMarkerImage || null,
-        is_unlocked: cp.isUnlocked,
-        is_completed: cp.isCompleted,
-        challenge_config: cp.challengeConfig || null,
-        shop_config: cp.shopConfig || null,
-      }));
+      const checkpointsToSave = checkpoints.map(cp => transformCheckpointToDb(cp, userId));
 
-      // Use upsert to safely update or insert checkpoints
-      // onConflict: id (primary key) - update if exists, insert if not
       const { error } = await supabase
         .from('checkpoints')
         .upsert(checkpointsToSave, {
@@ -253,23 +294,94 @@ export const storageService = {
           details: error.details,
           hint: error.hint,
         });
+        return false;
       }
+
+      return true;
     } catch (error) {
       console.warn('Unexpected error in saveCheckpoints:', error);
+      return false;
     }
   },
 
-  async getFlashcards(): Promise<Flashcard[]> {
+  /**
+   * Add or update a single checkpoint
+   * More efficient than saveCheckpoints when only one checkpoint changes
+   */
+  async upsertCheckpoint(checkpoint: Checkpoint): Promise<boolean> {
     const userId = getUserId();
-    if (!userId) {
-      // Return empty array if not in browser environment
-      return [];
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
     }
 
-    // Check if Supabase is configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl === '') {
-      // Return empty array if Supabase not configured
+    try {
+      const checkpointData = transformCheckpointToDb(checkpoint, userId);
+
+      const { error } = await supabase
+        .from('checkpoints')
+        .upsert(checkpointData, {
+          onConflict: 'id',
+          ignoreDuplicates: false,
+        });
+
+      if (error) {
+        console.error('Error upserting checkpoint:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Unexpected error in upsertCheckpoint:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Delete a checkpoint
+   */
+  async deleteCheckpoint(checkpointId: string): Promise<boolean> {
+    const userId = getUserId();
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('checkpoints')
+        .delete()
+        .eq('id', checkpointId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error deleting checkpoint:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+        });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Unexpected error in deleteCheckpoint:', error);
+      return false;
+    }
+  },
+
+  // ==================== Flashcards ====================
+
+  /**
+   * Get all flashcards for the current user
+   */
+  async getFlashcards(): Promise<Flashcard[]> {
+    const userId = getUserId();
+    if (!userId || !isSupabaseConfigured()) {
       return [];
     }
 
@@ -310,11 +422,13 @@ export const storageService = {
     }
   },
 
-  async saveFlashcards(flashcards: Flashcard[]): Promise<void> {
+  /**
+   * Save multiple flashcards (batch operation)
+   */
+  async saveFlashcards(flashcards: Flashcard[]): Promise<boolean> {
     const userId = getUserId();
-    if (!userId) {
-      // Silently fail if not in browser environment
-      return;
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
     }
 
     try {
@@ -333,8 +447,6 @@ export const storageService = {
         quality: fc.quality || null,
       }));
 
-      // Use upsert to safely update or insert flashcards
-      // onConflict: id (primary key) - update if exists, insert if not
       const { error } = await supabase
         .from('flashcards')
         .upsert(flashcardsToSave, {
@@ -349,23 +461,25 @@ export const storageService = {
           details: error.details,
           hint: error.hint,
         });
+        return false;
       }
+
+      return true;
     } catch (error) {
       console.warn('Unexpected error in saveFlashcards:', error);
+      return false;
     }
   },
 
+  // ==================== Event History ====================
+
+  /**
+   * Get event history for the current user
+   * Returns the most recent 50 events
+   */
   async getHistory(): Promise<EventRecord[]> {
     const userId = getUserId();
-    if (!userId) {
-      // Return empty array if not in browser environment
-      return [];
-    }
-
-    // Check if Supabase is configured
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl === '') {
-      // Return empty array if Supabase not configured
+    if (!userId || !isSupabaseConfigured()) {
       return [];
     }
 
@@ -404,11 +518,13 @@ export const storageService = {
     }
   },
 
-  async addHistoryItem(item: EventRecord): Promise<void> {
+  /**
+   * Add a new event history item
+   */
+  async addHistoryItem(item: EventRecord): Promise<boolean> {
     const userId = getUserId();
-    if (!userId) {
-      // Silently fail if not in browser environment
-      return;
+    if (!userId || !isSupabaseConfigured()) {
+      return false;
     }
 
     try {
@@ -433,9 +549,13 @@ export const storageService = {
           details: error.details,
           hint: error.hint,
         });
+        return false;
       }
+
+      return true;
     } catch (error) {
       console.warn('Unexpected error in addHistoryItem:', error);
+      return false;
     }
   },
 };
