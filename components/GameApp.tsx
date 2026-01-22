@@ -88,6 +88,7 @@ export default function GameApp() {
   const [gameMode, setGameMode] = useState<GameMode | null>(null); // null = not selected yet
   const [selectedStory, setSelectedStory] = useState<StoryId | null>(null);
   const [explorationInitialized, setExplorationInitialized] = useState(false); // Track if exploration mode has been initialized
+  const [isInitializing, setIsInitializing] = useState(true);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
@@ -196,26 +197,33 @@ export default function GameApp() {
   // Initialize data
   useEffect(() => {
     const loadData = async () => {
-      const [loadedStats, loadedCheckpoints, loadedFlashcards, loadedHistory] = await Promise.all([
-        storageService.getStats(),
-        storageService.getCheckpoints(),
-        storageService.getFlashcards(),
-        storageService.getHistory(),
-      ]);
-      setStats(loadedStats);
-      setCheckpoints(loadedCheckpoints);
-      setFlashcards(loadedFlashcards);
-      setHistory(loadedHistory);
-      
-      // If we have exploration initial checkpoints, mark as initialized
-      if (loadedCheckpoints.length > 0) {
-        const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.some(id =>
-          loadedCheckpoints.some(cp => cp.id === id)
-        );
+      try {
+        setIsInitializing(true);
+        const [loadedStats, loadedCheckpoints, loadedFlashcards, loadedHistory] = await Promise.all([
+          storageService.getStats(),
+          storageService.getCheckpoints(),
+          storageService.getFlashcards(),
+          storageService.getHistory(),
+        ]);
+        setStats(loadedStats);
+        setCheckpoints(loadedCheckpoints);
+        setFlashcards(loadedFlashcards);
+        setHistory(loadedHistory);
         
-        if (hasInitialCheckpoints) {
-          setExplorationInitialized(true);
+        // If we have exploration initial checkpoints, mark as initialized
+        if (loadedCheckpoints.length > 0) {
+          const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.some(id =>
+            loadedCheckpoints.some(cp => cp.id === id)
+          );
+          
+          if (hasInitialCheckpoints) {
+            setExplorationInitialized(true);
+          }
         }
+      } catch (error) {
+        console.error('Failed to load initial data:', error);
+      } finally {
+        setIsInitializing(false);
       }
     };
     loadData();
@@ -1127,7 +1135,8 @@ export default function GameApp() {
     }
   };
 
-  if (!stats) {
+  // Show loading screen only during initial data load
+  if (isInitializing || !stats) {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700">
         <Loader2 className="w-8 h-8 animate-spin text-white" />
@@ -1402,7 +1411,7 @@ export default function GameApp() {
         mapStyle={mapStyle}
       />
 
-      {isGeneratingWorld && (
+      {isGeneratingWorld && !isInitializing && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none w-max">
           <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-purple-100">
             <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
@@ -1608,17 +1617,24 @@ export default function GameApp() {
               </div>
             )}
             <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-start bg-gradient-to-b from-[#fcfbf9] via-[#fcfbf9]/95 to-transparent pb-8 pointer-events-none">
-              <div className="bg-white/80 backdrop-blur-md rounded-full p-2 pr-6 flex items-center gap-4 shadow-sm border border-black/5 pointer-events-auto transition-all hover:scale-[1.02]">
-                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-white shadow-sm flex-shrink-0">
+              <div className="bg-white/90 backdrop-blur-lg rounded-full p-2.5 pr-5 flex items-center gap-3.5 shadow-lg border border-black/[0.08] pointer-events-auto transition-all hover:shadow-xl hover:border-black/[0.12] group">
+                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 transition-transform group-hover:scale-105">
                   <img src={activeDialog.checkpoint.image} className="w-full h-full object-cover" alt="Avatar" />
                 </div>
-                <div className="flex flex-col justify-center">
-                  <span className="font-bold text-base text-gray-800 leading-tight">
-                    {activeDialog.checkpoint.npcRole}
+                <div className="flex flex-col justify-center gap-1 min-w-0">
+                  <span className="font-bold text-base text-gray-900 leading-tight truncate">
+                    {(() => {
+                      const roleText = activeDialog.checkpoint.npcRole;
+                      const match = roleText.match(/^(.+?)\s*\((.+?)\)$/);
+                      return match ? match[1].trim() : roleText;
+                    })()}
                   </span>
-                  <span className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mt-0.5">
-                    {activeDialog.checkpoint.name}
-                  </span>
+                  <div className="flex items-center gap-1.5 text-gray-500">
+                    <MapPinned className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="text-xs font-medium leading-tight truncate">
+                      {activeDialog.checkpoint.name}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 pointer-events-auto pt-1">
@@ -1845,7 +1861,7 @@ export default function GameApp() {
                   </div>
                 </div>
               ))}
-              {isLoadingAI && (
+              {isLoadingAI && !isInitializing && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border border-gray-100">
                     <Bot className="w-4 h-4 text-brand-600" />
@@ -1925,7 +1941,6 @@ export default function GameApp() {
                   {isListening && interimVoiceText && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-blue-500">
                       <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
-                      <span className="italic opacity-75">recognizing...</span>
                     </div>
                   )}
                 </div>
@@ -2232,7 +2247,7 @@ export default function GameApp() {
             {/* Form */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide bg-white">
               {/* Nearby Places Selector */}
-              {isLoadingPlaces && (
+              {isLoadingPlaces && !isInitializing && (
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center gap-2">
                   <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
                   <span className="text-xs text-blue-700">Searching for nearby places...</span>

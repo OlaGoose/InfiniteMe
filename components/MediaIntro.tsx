@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MediaContent } from '@/types';
 import { X, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 
@@ -10,11 +10,20 @@ interface MediaIntroProps {
   onComplete?: () => void;
 }
 
+// Detect mobile device
+const isMobileDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (window.innerWidth <= 768);
+};
+
 export default function MediaIntro({ media, onClose, onComplete }: MediaIntroProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(media.autoPlay !== false);
-  const [isMuted, setIsMuted] = useState(false);
+  // On mobile, start muted to enable autoplay
+  const [isMuted, setIsMuted] = useState(isMobileDevice());
   const [hasInteracted, setHasInteracted] = useState(false);
+  const youtubeIframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     // Auto-complete for text content after 5 seconds if user hasn't interacted
@@ -150,15 +159,79 @@ export default function MediaIntro({ media, onClose, onComplete }: MediaIntroPro
         );
 
       case 'youtube':
+        // Build YouTube embed URL with proper parameters for mobile autoplay
+        const youtubeParams = new URLSearchParams({
+          autoplay: isPlaying ? '1' : '0',
+          mute: isMuted ? '1' : '0',
+          playsinline: '1', // Important for iOS
+          enablejsapi: '1', // Enable YouTube API
+          rel: '0', // Don't show related videos
+          modestbranding: '1', // Reduce YouTube branding
+        });
+        
+        const youtubeUrl = `https://www.youtube.com/embed/${media.youtubeId}?${youtubeParams.toString()}`;
+        
+        const handleMuteToggle = () => {
+          setHasInteracted(true);
+          const newMuted = !isMuted;
+          setIsMuted(newMuted);
+          
+          // Update iframe src to reflect mute state change
+          if (youtubeIframeRef.current) {
+            const newParams = new URLSearchParams({
+              autoplay: '1',
+              mute: newMuted ? '1' : '0',
+              playsinline: '1',
+              enablejsapi: '1',
+              rel: '0',
+              modestbranding: '1',
+            });
+            youtubeIframeRef.current.src = `https://www.youtube.com/embed/${media.youtubeId}?${newParams.toString()}`;
+          }
+        };
+        
         return (
-          <div className="relative w-full h-[400px] bg-black rounded-lg overflow-hidden">
+          <div className="relative w-full h-[400px] bg-black rounded-lg overflow-hidden group">
             <iframe
-              src={`https://www.youtube.com/embed/${media.youtubeId}?autoplay=${isPlaying ? 1 : 0}&mute=${isMuted ? 1 : 0}`}
+              ref={youtubeIframeRef}
+              src={youtubeUrl}
               title={media.title || 'YouTube video'}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               className="w-full h-full"
+              onLoad={() => {
+                // Ensure autoplay works on mobile after iframe loads
+                if (isPlaying && isMobileDevice()) {
+                  // Small delay to ensure iframe is ready
+                  setTimeout(() => {
+                    if (youtubeIframeRef.current) {
+                      // Try to trigger play via postMessage (if YouTube API is available)
+                      youtubeIframeRef.current.contentWindow?.postMessage(
+                        JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+                        '*'
+                      );
+                    }
+                  }, 500);
+                }
+              }}
             />
+            {/* Mute/Unmute button overlay for better UX */}
+            {isMuted && (
+              <button
+                onClick={handleMuteToggle}
+                className="absolute top-4 right-4 bg-black/60 hover:bg-black/80 text-white p-2.5 rounded-full backdrop-blur-sm transition-all z-10 flex items-center gap-2 group-hover:opacity-100 opacity-90"
+                aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+              >
+                {isMuted ? (
+                  <>
+                    <VolumeX className="w-5 h-5" />
+                    <span className="text-xs font-medium hidden sm:inline">Tap to unmute</span>
+                  </>
+                ) : (
+                  <Volume2 className="w-5 h-5" />
+                )}
+              </button>
+            )}
           </div>
         );
 
