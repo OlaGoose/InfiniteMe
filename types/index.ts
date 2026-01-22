@@ -11,6 +11,24 @@ export type DifficultyLevel = 'basic' | 'beginner' | 'intermediate' | 'advanced'
 
 export type WeatherType = 'sunny' | 'rain' | 'storm' | 'snow' | 'heatwave';
 
+// ========== Game Mode System ==========
+export type GameMode = 'story' | 'exploration';
+
+export type StoryId = 'london-journey' | 'friends-s01e01';
+
+export interface Story {
+  id: StoryId;
+  name: string;
+  description: string;
+  icon: string;
+  thumbnail: string;
+  totalCheckpoints: number;
+  estimatedDuration: string; // e.g., "2-3 hours"
+  difficulty: DifficultyLevel;
+  tags: string[]; // e.g., ['travel', 'culture'], ['sitcom', 'friendship']
+  checkpoints: Omit<Checkpoint, 'isUnlocked' | 'isCompleted'>[];
+}
+
 export interface Checkpoint {
   id: string;
   name: string;
@@ -24,6 +42,9 @@ export interface Checkpoint {
   customMarkerImage?: string;
   isUnlocked: boolean;
   isCompleted: boolean;
+  // Story mode fields
+  storyId?: StoryId; // Which story this checkpoint belongs to (undefined for exploration mode)
+  order?: number; // Order in the story (for linear unlocking)
   challengeConfig?: {
     maxTurns: number;
     targetScore: number;

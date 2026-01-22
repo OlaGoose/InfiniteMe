@@ -58,6 +58,8 @@ import {
   ShopItem,
   EventRecord,
   CheckpointType,
+  GameMode,
+  StoryId,
 } from '@/types';
 import { calculateNextReview, getDueCards, getStudyStats } from '@/utils/anki';
 import {
@@ -67,6 +69,7 @@ import {
   DIFFICULTY_CONFIG,
   WEATHER_CONFIG,
   CHECKPOINTS,
+  STORIES,
 } from '@/constants';
 import { computeDestinationPoint } from '@/utils/geo';
 import { storageService } from '@/lib/supabase/storage';
@@ -78,6 +81,8 @@ const MAX_DRAG_DISTANCE = 150;
 
 export default function GameApp() {
   const [hasStarted, setHasStarted] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode | null>(null); // null = not selected yet
+  const [selectedStory, setSelectedStory] = useState<StoryId | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
@@ -347,6 +352,16 @@ export default function GameApp() {
 
   // Start game function - handles permissions and initialization
   const handleStartGame = async () => {
+    // Validate mode selection
+    if (!gameMode) {
+      setToast({ message: 'Please select a game mode', type: 'error' });
+      return;
+    }
+    if (gameMode === 'story' && !selectedStory) {
+      setToast({ message: 'Please select a story', type: 'error' });
+      return;
+    }
+
     // Request motion sensor permission (iOS 13+)
     if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
       try {
@@ -370,22 +385,49 @@ export default function GameApp() {
           
           setHasStarted(true);
           
-          // Check if we need to generate local levels
-          const currentCheckpoints = checkpointsRef.current;
-          const leafletModule = await import('leaflet');
-          const L = leafletModule.default || leafletModule;
-          const isDefaultLondon = currentCheckpoints.some(cp => cp.id === 'big-ben');
-          
-          if (currentCheckpoints.length === 0 || isDefaultLondon) {
-            generateLocalLevels(userPos);
+          // Initialize checkpoints based on mode
+          if (gameMode === 'story' && selectedStory) {
+            // Story mode: Load story checkpoints with linear unlocking
+            const story = STORIES[selectedStory];
+            const storyCheckpoints: Checkpoint[] = story.checkpoints.map((cp, index) => ({
+              ...cp,
+              isUnlocked: index === 0, // Only first checkpoint unlocked
+              isCompleted: false,
+            }));
+            setCheckpoints(storyCheckpoints);
+            // Save to storage
+            await storageService.saveCheckpoints(storyCheckpoints);
+          } else if (gameMode === 'exploration') {
+            // Exploration mode: Generate local levels
+            const currentCheckpoints = checkpointsRef.current;
+            const leafletModule = await import('leaflet');
+            const L = leafletModule.default || leafletModule;
+            const isDefaultLondon = currentCheckpoints.some(cp => cp.id === 'big-ben');
+            
+            if (currentCheckpoints.length === 0 || isDefaultLondon) {
+              generateLocalLevels(userPos);
+            }
           }
         },
         (error) => {
           console.warn('Geolocation failed or denied:', error);
           // Start game anyway with default location
           setHasStarted(true);
-          if (checkpointsRef.current.length === 0 && stats) {
-            generateLocalLevels(stats.currentLocation);
+          
+          if (gameMode === 'story' && selectedStory) {
+            // Story mode: Load story checkpoints
+            const story = STORIES[selectedStory];
+            const storyCheckpoints: Checkpoint[] = story.checkpoints.map((cp, index) => ({
+              ...cp,
+              isUnlocked: index === 0,
+              isCompleted: false,
+            }));
+            setCheckpoints(storyCheckpoints);
+            storageService.saveCheckpoints(storyCheckpoints);
+          } else if (gameMode === 'exploration') {
+            if (checkpointsRef.current.length === 0 && stats) {
+              generateLocalLevels(stats.currentLocation);
+            }
           }
         },
         { enableHighAccuracy: true, timeout: 5000 }
@@ -393,8 +435,21 @@ export default function GameApp() {
     } else {
       // No geolocation support, start with default location
       setHasStarted(true);
-      if (checkpointsRef.current.length === 0 && stats) {
-        generateLocalLevels(stats.currentLocation);
+      
+      if (gameMode === 'story' && selectedStory) {
+        // Story mode: Load story checkpoints
+        const story = STORIES[selectedStory];
+        const storyCheckpoints: Checkpoint[] = story.checkpoints.map((cp, index) => ({
+          ...cp,
+          isUnlocked: index === 0,
+          isCompleted: false,
+        }));
+        setCheckpoints(storyCheckpoints);
+        storageService.saveCheckpoints(storyCheckpoints);
+      } else if (gameMode === 'exploration') {
+        if (checkpointsRef.current.length === 0 && stats) {
+          generateLocalLevels(stats.currentLocation);
+        }
       }
     }
   };
@@ -827,11 +882,31 @@ export default function GameApp() {
       setHistory(prev => [record, ...prev]);
       
       // Mark checkpoint as completed if it was a meaningful interaction
-      setCheckpoints(prev => prev.map(cp => 
-        cp.id === dialog.checkpoint.id 
-          ? { ...cp, isCompleted: true }
-          : cp
-      ));
+      setCheckpoints(prev => {
+        const updated = prev.map(cp => 
+          cp.id === dialog.checkpoint.id 
+            ? { ...cp, isCompleted: true }
+            : cp
+        );
+        
+        // Story mode: Unlock next checkpoint after completing current one
+        if (gameMode === 'story' && selectedStory && dialog.checkpoint.storyId === selectedStory) {
+          const currentCheckpoint = dialog.checkpoint;
+          if (currentCheckpoint.order !== undefined) {
+            const nextOrder = currentCheckpoint.order + 1;
+            const nextCheckpoint = updated.find(cp => cp.storyId === selectedStory && cp.order === nextOrder);
+            if (nextCheckpoint) {
+              return updated.map(cp => 
+                cp.id === nextCheckpoint.id 
+                  ? { ...cp, isUnlocked: true }
+                  : cp
+              );
+            }
+          }
+        }
+        
+        return updated;
+      });
       
       // Update stats for completed dialogues
       setStats(prev => {
@@ -841,6 +916,10 @@ export default function GameApp() {
           completedDialogues: prev.completedDialogues + 1,
         };
       });
+      
+      // Save updated checkpoints
+      const updatedCheckpoints = checkpointsRef.current;
+      storageService.saveCheckpoints(updatedCheckpoints);
     }
     setActiveDialog(null);
     setChallengeResult(null);
@@ -931,7 +1010,7 @@ export default function GameApp() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-400/20 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
         
         {/* Main content */}
-        <div className="relative z-10 flex flex-col items-center max-w-sm text-center">
+        <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center">
           {/* App icon */}
           <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-[32px] flex items-center justify-center mb-8 shadow-2xl border border-white/20">
             <Footprints className="w-12 h-12 text-blue-300" />
@@ -941,25 +1020,114 @@ export default function GameApp() {
           <h1 className="text-5xl font-black mb-4 tracking-tight drop-shadow-lg">
             StepTrek
           </h1>
-          <p className="text-blue-100/80 text-lg mb-12 leading-relaxed font-medium">
+          <p className="text-blue-100/80 text-lg mb-8 leading-relaxed font-medium">
             Language mastery at every step
           </p>
-          
-          {/* Start button */}
-          <div className="w-full flex flex-col gap-4">
-            <button
-              onClick={handleStartGame}
-              className="w-full bg-white text-blue-700 py-5 px-8 rounded-[24px] font-black text-lg shadow-2xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 group"
-            >
-              <Activity className="w-6 h-6 group-hover:animate-pulse" />
-              Start Exploring
-            </button>
-            
-            {/* Info text */}
-            <p className="text-blue-100/60 text-xs mt-4 px-4">
-              Walk in the real world to earn steps and learn English through immersive conversations
-            </p>
-          </div>
+
+          {/* Mode Selection */}
+          {gameMode === null ? (
+            <div className="w-full flex flex-col gap-4 mb-6">
+              <h2 className="text-xl font-bold mb-4">Choose Your Adventure</h2>
+              
+              {/* Story Mode Button */}
+              <button
+                onClick={() => setGameMode('story')}
+                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
+              >
+                <BookOpen className="w-5 h-5" />
+                Story Mode
+                <span className="text-xs text-blue-200/80 ml-auto">Guided Journey</span>
+              </button>
+              
+              {/* Exploration Mode Button */}
+              <button
+                onClick={() => setGameMode('exploration')}
+                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
+              >
+                <Globe className="w-5 h-5" />
+                Free Exploration
+                <span className="text-xs text-blue-200/80 ml-auto">Open World</span>
+              </button>
+            </div>
+          ) : gameMode === 'story' && selectedStory === null ? (
+            <div className="w-full flex flex-col gap-4 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">Select a Story</h2>
+                <button
+                  onClick={() => {
+                    setGameMode(null);
+                    setSelectedStory(null);
+                  }}
+                  className="text-blue-200/80 hover:text-white transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {/* Story Cards */}
+              <div className="flex flex-col gap-3">
+                {Object.values(STORIES).map((story) => (
+                  <button
+                    key={story.id}
+                    onClick={() => setSelectedStory(story.id)}
+                    className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-semibold text-left shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-start gap-4 border border-white/20"
+                  >
+                    <div className="text-4xl">{story.icon}</div>
+                    <div className="flex-1">
+                      <div className="font-bold text-base mb-1">{story.name}</div>
+                      <div className="text-xs text-blue-200/80 mb-2">{story.description}</div>
+                      <div className="flex items-center gap-3 text-xs text-blue-200/60">
+                        <span>{story.totalCheckpoints} checkpoints</span>
+                        <span>•</span>
+                        <span>{story.estimatedDuration}</span>
+                        <span>•</span>
+                        <span className="capitalize">{story.difficulty}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="w-full flex flex-col gap-4">
+              {gameMode === 'story' && selectedStory && (
+                <div className="mb-4 p-4 bg-white/10 backdrop-blur-xl rounded-[20px] border border-white/20">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-2xl">{STORIES[selectedStory].icon}</span>
+                    <div>
+                      <div className="font-bold">{STORIES[selectedStory].name}</div>
+                      <div className="text-xs text-blue-200/80">Story Mode</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setGameMode(null);
+                      setSelectedStory(null);
+                    }}
+                    className="text-xs text-blue-200/80 hover:text-white transition-colors"
+                  >
+                    Change story
+                  </button>
+                </div>
+              )}
+              
+              {/* Start button */}
+              <button
+                onClick={handleStartGame}
+                className="w-full bg-white text-blue-700 py-5 px-8 rounded-[24px] font-black text-lg shadow-2xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 group"
+              >
+                <Activity className="w-6 h-6 group-hover:animate-pulse" />
+                {gameMode === 'story' ? 'Start Story' : 'Start Exploring'}
+              </button>
+              
+              {/* Info text */}
+              <p className="text-blue-100/60 text-xs mt-4 px-4">
+                {gameMode === 'story' 
+                  ? 'Follow a guided story with linear progression through immersive dialogues'
+                  : 'Walk in the real world to earn steps and learn English through immersive conversations'}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );
