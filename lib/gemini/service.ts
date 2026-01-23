@@ -346,9 +346,47 @@ export const generateDialogue = async (
 
       const parsed = await response.json();
 
+      // Validate and normalize the response
+      let npcResponse: string;
+      let userOptions: string[];
+      
+      // Handle case where parsed might be a string containing JSON
+      if (typeof parsed === 'string') {
+        try {
+          const reParsed = JSON.parse(parsed);
+          npcResponse = reParsed.npc_response || parsed;
+          userOptions = reParsed.user_options || ['Hello', 'How are you?', 'Bye'];
+        } catch {
+          // If it's not valid JSON, use the string as the response
+          npcResponse = parsed;
+          userOptions = ['Hello', 'How are you?', 'Bye'];
+        }
+      } else {
+        // Normal response structure
+        npcResponse = typeof parsed.npc_response === 'string' 
+          ? parsed.npc_response 
+          : String(parsed.npc_response || 'Hello there!');
+        userOptions = Array.isArray(parsed.user_options) 
+          ? parsed.user_options 
+          : ['Hello', 'How are you?', 'Bye'];
+      }
+
+      // Ensure npcResponse is not a JSON string
+      if (npcResponse.trim().startsWith('{') && npcResponse.trim().endsWith('}')) {
+        try {
+          const jsonParsed = JSON.parse(npcResponse);
+          if (jsonParsed.npc_response) {
+            npcResponse = jsonParsed.npc_response;
+            userOptions = jsonParsed.user_options || userOptions;
+          }
+        } catch {
+          // If parsing fails, keep the original response
+        }
+      }
+
       const aiResponse: AIResponse = {
-        text: parsed.npc_response || 'Hello there!',
-        options: parsed.user_options || ['Hello', 'How are you?', 'Bye'],
+        text: npcResponse,
+        options: userOptions,
       };
 
       if (lastUserMessage && parsed.grammar_check?.has_error) {

@@ -106,17 +106,45 @@ async function handleGenerateDialogue(params: any) {
       // Doubao might return text without JSON formatting, try to parse or format
       let parsed;
       try {
+        // First, try to parse as-is
         parsed = DoubaoProvider.parseJSONResponse(text);
-      } catch {
+        
+        // Validate that we have the required fields
+        if (!parsed.npc_response && typeof parsed === 'string') {
+          // If parsed is a string, it means the JSON was the entire response
+          // Try parsing it again
+          const reParsed = JSON.parse(parsed);
+          parsed = reParsed;
+        }
+        
+        // Ensure we have the required structure
+        if (!parsed.npc_response) {
+          throw new Error('Invalid response structure: missing npc_response');
+        }
+        
+        // Normalize the response structure
+        parsed = {
+          npc_response: typeof parsed.npc_response === 'string' ? parsed.npc_response : String(parsed.npc_response || 'Hello there!'),
+          user_options: Array.isArray(parsed.user_options) ? parsed.user_options : ['Continue', 'Ask more', 'Goodbye'],
+          grammar_check: parsed.grammar_check || { has_error: false }
+        };
+      } catch (parseError: any) {
+        console.warn('⚠️ Failed to parse Doubao response as JSON:', parseError.message);
+        console.warn('Raw response text:', text.substring(0, 200));
+        
         // Fallback: create a response from the text
         parsed = {
-          npc_response: text,
+          npc_response: text.trim(),
           user_options: ['Continue', 'Ask more', 'Goodbye'],
           grammar_check: { has_error: false }
         };
       }
 
-      console.log('✅ Doubao success');
+      console.log('✅ Doubao success, parsed response:', {
+        hasNpcResponse: !!parsed.npc_response,
+        npcResponseLength: parsed.npc_response?.length || 0,
+        optionsCount: parsed.user_options?.length || 0
+      });
       return NextResponse.json(parsed);
     } catch (error: any) {
       lastError = error;

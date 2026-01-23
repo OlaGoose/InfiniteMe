@@ -75,7 +75,7 @@ import {
   EXPLORATION_INITIAL_CHECKPOINT_IDS,
 } from '@/constants';
 import { EXPLORATION_INITIAL_CHECKPOINTS } from '@/constants/exploration';
-import { computeDestinationPoint } from '@/utils/geo';
+import { computeDestinationPoint, calculateDistance, calculateBearing } from '@/utils/geo';
 import { storageService } from '@/lib/supabase/storage';
 import * as GeminiService from '@/lib/gemini/service';
 import { placeService, PlaceInfo } from '@/lib/places/service';
@@ -785,6 +785,93 @@ export default function GameApp() {
     [stats]
   );
 
+  // Get next unlocked checkpoint in story mode
+  const getNextStoryCheckpoint = useCallback((): Checkpoint | null => {
+    if (gameMode !== 'story' || !selectedStory) return null;
+    
+    // Find the next unlocked but not completed checkpoint
+    const nextCheckpoint = checkpoints
+      .filter(cp => cp.storyId === selectedStory && cp.isUnlocked && !cp.isCompleted)
+      .sort((a, b) => (a.order || 0) - (b.order || 0))[0];
+    
+    return nextCheckpoint || null;
+  }, [gameMode, selectedStory, checkpoints]);
+
+  // Story mode: Move towards next checkpoint using all available steps
+  const handleStoryModeMove = useCallback(() => {
+    if (!stats || gameMode !== 'story') return;
+    
+    const nextCheckpoint = getNextStoryCheckpoint();
+    if (!nextCheckpoint) {
+      setToast({ message: 'No more checkpoints available!', type: 'info' });
+      return;
+    }
+    
+    const currentPos = stats.currentLocation;
+    const targetPos = nextCheckpoint.location;
+    
+    // Calculate total distance to target
+    const totalDistance = calculateDistance(currentPos, targetPos);
+    const bearing = calculateBearing(currentPos, targetPos);
+    
+    // Calculate maximum distance we can move with available steps
+    const maxDistanceWithSteps = stats.availableSteps * METERS_PER_STEP;
+    
+    // Determine actual move distance
+    let moveDistance: number;
+    let newAvailableSteps: number;
+    
+    if (maxDistanceWithSteps >= totalDistance) {
+      // We have enough steps to reach the target
+      moveDistance = totalDistance;
+      const stepsNeeded = Math.ceil(totalDistance / METERS_PER_STEP);
+      newAvailableSteps = stats.availableSteps - stepsNeeded;
+    } else {
+      // We don't have enough steps, move as far as possible
+      moveDistance = maxDistanceWithSteps;
+      newAvailableSteps = 0;
+    }
+    
+    // Calculate new position
+    const newPosition = computeDestinationPoint(currentPos, moveDistance, bearing);
+    
+    // Update stats directly (bypass executeMove to handle step consumption manually)
+    setStats(prev => {
+      if (!prev) return prev;
+      
+      setIsMoving(true);
+      setTimeout(() => setIsMoving(false), 500);
+      
+      // Show feedback
+      const remainingDistance = calculateDistance(newPosition, targetPos);
+      
+      if (remainingDistance < 5) {
+        setToast({ 
+          message: `Arrived at ${nextCheckpoint.name}!`, 
+          type: 'success' 
+        });
+      } else {
+        const remainingSteps = Math.ceil(remainingDistance / METERS_PER_STEP);
+        setToast({ 
+          message: `${remainingSteps} steps remaining to ${nextCheckpoint.name}`, 
+          type: 'info' 
+        });
+      }
+      
+      // Show out of steps modal if we ran out
+      if (newAvailableSteps === 0 && prev.availableSteps > 0) {
+        setShowOutOfStepsModal(true);
+      }
+      
+      return {
+        ...prev,
+        availableSteps: newAvailableSteps,
+        traveledDistance: prev.traveledDistance + moveDistance,
+        currentLocation: newPosition,
+      };
+    });
+  }, [stats, gameMode, getNextStoryCheckpoint]);
+
   const handleJoystickMove = useCallback(
     (bearing: number, intensity: number) => {
       if (!stats) return;
@@ -965,6 +1052,31 @@ export default function GameApp() {
         }
       } else {
         const response = await GeminiService.generateDialogue(dialog.checkpoint, history);
+        
+        // Validate and sanitize response
+        let npcText = response.text || 'Hello there!';
+        let npcOptions = response.options || ['Hello', 'How are you?', 'Bye'];
+        
+        // Additional safety check: if text looks like JSON, try to extract the actual message
+        if (npcText.trim().startsWith('{') && npcText.includes('npc_response')) {
+          try {
+            const jsonParsed = JSON.parse(npcText);
+            if (jsonParsed.npc_response) {
+              npcText = jsonParsed.npc_response;
+              npcOptions = jsonParsed.user_options || npcOptions;
+            }
+          } catch {
+            // If parsing fails, use a fallback message
+            console.warn('Failed to parse JSON from NPC response, using fallback');
+            npcText = 'I apologize, but I had trouble understanding that. Could you repeat?';
+          }
+        }
+        
+        // Ensure options is an array with at least 3 items
+        if (!Array.isArray(npcOptions) || npcOptions.length < 3) {
+          npcOptions = ['Okay, thanks.', 'I see.', 'Thank you.'];
+        }
+        
         if (response.grammarCorrection) {
           const msgs = [...updatedMessages];
           msgs[msgs.length - 1].grammarCorrection = response.grammarCorrection;
@@ -973,15 +1085,15 @@ export default function GameApp() {
         const newAiMsg: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'model',
-          text: response.text,
-          options: response.options,
+          text: npcText,
+          options: npcOptions.slice(0, 3), // Ensure exactly 3 options
           timestamp: Date.now(),
         };
         setActiveDialog(prev =>
           prev ? { ...prev, messages: [...prev.messages, newAiMsg] } : null
         );
         if (autoPlayRef.current) {
-          speakText(response.text);
+          speakText(npcText);
         }
       }
       if (stats) {
@@ -1147,30 +1259,30 @@ export default function GameApp() {
   // Start screen - shown before the game begins
   if (!hasStarted) {
     return (
-      <div className="absolute inset-0 z-[200] bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex flex-col items-center justify-center p-8 text-white overflow-hidden">
+      <div className="absolute inset-0 z-[200] bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex flex-col items-center justify-center p-6 sm:p-8 text-white overflow-hidden">
         {/* Background decorations */}
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400/20 blur-[120px] rounded-full animate-pulse" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-400/20 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
         
         {/* Main content */}
-        <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center">
+        <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center animate-in fade-in zoom-in duration-500">
           {/* App icon */}
-          <div className="w-24 h-24 bg-white/10 backdrop-blur-xl rounded-[32px] flex items-center justify-center mb-8 shadow-2xl border border-white/20">
-            <Footprints className="w-12 h-12 text-blue-300" />
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center mb-6 sm:mb-8 shadow-2xl border border-white/20 transition-transform hover:scale-105">
+            <Footprints className="w-10 h-10 sm:w-12 sm:h-12 text-blue-300" />
           </div>
           
           {/* App name and tagline */}
-          <h1 className="text-5xl font-black mb-4 tracking-tight drop-shadow-lg">
+          <h1 className="text-4xl sm:text-5xl font-black mb-3 sm:mb-4 tracking-tight drop-shadow-lg">
             StepTrek
           </h1>
-          <p className="text-blue-100/80 text-lg mb-8 leading-relaxed font-medium">
+          <p className="text-blue-100/80 text-base sm:text-lg mb-6 sm:mb-8 leading-relaxed font-medium">
             Language mastery at every step
           </p>
 
           {/* Mode Selection */}
           {gameMode === null ? (
-            <div className="w-full flex flex-col gap-4 mb-6">
-              <h2 className="text-xl font-bold mb-4">Choose Your Adventure</h2>
+            <div className="w-full flex flex-col gap-3 sm:gap-4 mb-6 animate-in slide-in-from-bottom-4 duration-500">
+              <h2 className="text-lg sm:text-xl font-bold mb-2">Choose Your Adventure</h2>
               
               {/* Story Mode Button */}
               <button
@@ -1178,11 +1290,18 @@ export default function GameApp() {
                   setGameMode('story');
                   setExplorationInitialized(false);
                 }}
-                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
+                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-2xl font-bold text-base shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-center justify-between gap-3 border border-white/20 group"
               >
-                <BookOpen className="w-5 h-5" />
-                Story Mode
-                <span className="text-xs text-blue-200/80 ml-auto">Guided Journey</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/10 rounded-xl group-hover:bg-white/20 transition-colors">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold">Story Mode</div>
+                    <div className="text-xs text-blue-200/80 font-normal">Guided Journey</div>
+                  </div>
+                </div>
+                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
               </button>
 
               {/* Exploration Mode Button */}
@@ -1190,24 +1309,32 @@ export default function GameApp() {
                 onClick={() => {
                   setGameMode('exploration');
                 }}
-                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-bold text-base shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center gap-3 border border-white/20"
+                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-2xl font-bold text-base shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-center justify-between gap-3 border border-white/20 group"
               >
-                <Globe className="w-5 h-5" />
-                Free Exploration
-                <span className="text-xs text-blue-200/80 ml-auto">Open World</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/10 rounded-xl group-hover:bg-white/20 transition-colors">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold">Free Exploration</div>
+                    <div className="text-xs text-blue-200/80 font-normal">Open World</div>
+                  </div>
+                </div>
+                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
               </button>
             </div>
           ) : gameMode === 'story' && selectedStory === null ? (
-            <div className="w-full flex flex-col gap-4 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">Select a Story</h2>
+            <div className="w-full flex flex-col gap-4 mb-6 animate-in slide-in-from-right-4 duration-500">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-lg sm:text-xl font-bold">Select a Story</h2>
                 <button
                   onClick={() => {
                     setGameMode(null);
                     setSelectedStory(null);
                     setExplorationInitialized(false);
                   }}
-                  className="text-blue-200/80 hover:text-white transition-colors"
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                  aria-label="Go back"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
@@ -1215,37 +1342,48 @@ export default function GameApp() {
               
               {/* Story Cards */}
               <div className="flex flex-col gap-3">
-                {Object.values(STORIES).map((story) => (
+                {Object.values(STORIES).map((story, index) => (
                   <button
                     key={story.id}
                     onClick={() => setSelectedStory(story.id)}
-                    className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-[20px] font-semibold text-left shadow-xl hover:bg-white/20 active:scale-95 transition-all flex items-start gap-4 border border-white/20"
+                    className="w-full bg-white/10 backdrop-blur-xl text-white p-4 sm:p-6 rounded-2xl font-semibold text-left shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-start gap-4 border border-white/20 group animate-in slide-in-from-bottom-4"
+                    style={{ animationDelay: `${index * 100}ms` }}
                   >
-                    <div className="text-4xl">{story.icon}</div>
-                    <div className="flex-1">
-                      <div className="font-bold text-base mb-1">{story.name}</div>
-                      <div className="text-xs text-blue-200/80 mb-2">{story.description}</div>
-                      <div className="flex items-center gap-3 text-xs text-blue-200/60">
-                        <span>{story.totalCheckpoints} checkpoints</span>
-                        <span>•</span>
-                        <span>{story.estimatedDuration}</span>
-                        <span>•</span>
-                        <span className="capitalize">{story.difficulty}</span>
+                    <div className="text-3xl sm:text-4xl group-hover:scale-110 transition-transform">{story.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-base mb-1.5">{story.name}</div>
+                      <div className="text-xs text-blue-200/80 mb-3 leading-relaxed">{story.description}</div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="px-2 py-1 bg-white/10 rounded-full border border-white/20">
+                          {story.totalCheckpoints} checkpoints
+                        </span>
+                        <span className="px-2 py-1 bg-white/10 rounded-full border border-white/20">
+                          {story.estimatedDuration}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full border ${
+                          story.difficulty === 'basic' ? 'bg-green-500/20 border-green-400/30 text-green-200' :
+                          story.difficulty === 'beginner' ? 'bg-blue-500/20 border-blue-400/30 text-blue-200' :
+                          story.difficulty === 'intermediate' ? 'bg-yellow-500/20 border-yellow-400/30 text-yellow-200' :
+                          'bg-red-500/20 border-red-400/30 text-red-200'
+                        }`}>
+                          {story.difficulty}
+                        </span>
                       </div>
                     </div>
+                    <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all flex-shrink-0 mt-1" />
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="w-full flex flex-col gap-4">
+            <div className="w-full flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-500">
               {gameMode === 'story' && selectedStory && (
-                <div className="mb-4 p-4 bg-white/10 backdrop-blur-xl rounded-[20px] border border-white/20">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-2xl">{STORIES[selectedStory].icon}</span>
-                    <div>
-                      <div className="font-bold">{STORIES[selectedStory].name}</div>
-                      <div className="text-xs text-blue-200/80">Story Mode</div>
+                <div className="mb-2 p-4 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-lg">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="text-3xl">{STORIES[selectedStory].icon}</div>
+                    <div className="flex-1">
+                      <div className="font-bold text-base">{STORIES[selectedStory].name}</div>
+                      <div className="text-xs text-blue-200/80 mt-0.5">Story Mode</div>
                     </div>
                   </div>
                   <button
@@ -1254,7 +1392,7 @@ export default function GameApp() {
                       setSelectedStory(null);
                       setExplorationInitialized(false);
                     }}
-                    className="text-xs text-blue-200/80 hover:text-white transition-colors"
+                    className="text-xs text-blue-200/80 hover:text-white transition-colors underline"
                   >
                     Change story
                   </button>
@@ -1264,14 +1402,14 @@ export default function GameApp() {
               {/* Start button */}
               <button
                 onClick={handleStartGame}
-                className="w-full bg-white text-blue-700 py-5 px-8 rounded-[24px] font-black text-lg shadow-2xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 group"
+                className="w-full bg-white text-blue-700 py-5 px-8 rounded-2xl font-black text-lg shadow-2xl hover:scale-[1.02] hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 group"
               >
                 <Activity className="w-6 h-6 group-hover:animate-pulse" />
                 {gameMode === 'story' ? 'Start Story' : 'Start Exploring'}
               </button>
               
               {/* Info text */}
-              <p className="text-blue-100/60 text-xs mt-4 px-4">
+              <p className="text-blue-100/60 text-xs mt-2 px-4 leading-relaxed">
                 {gameMode === 'story' 
                   ? 'Follow a guided story with linear progression through immersive dialogues'
                   : 'Walk in the real world to earn steps and learn English through immersive conversations'}
@@ -1425,7 +1563,7 @@ export default function GameApp() {
           <div className="flex justify-between items-start w-full">
             <div className="flex gap-2 pointer-events-auto overflow-x-auto pb-1 scrollbar-hide max-w-[70%]">
               <div
-                className={`backdrop-blur-md p-2 rounded-xl shadow-lg border border-gray-100 flex items-center gap-2 transition-all shrink-0 ${
+                className={`backdrop-blur-md p-2 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2 transition-all shrink-0 ${
                   stepDetected 
                     ? 'bg-brand-100 scale-105 border-brand-200' 
                     : stats.availableSteps <= 10 
@@ -1471,7 +1609,7 @@ export default function GameApp() {
               </div>
 
               <div
-                className={`backdrop-blur-md p-2 rounded-xl shadow-lg border transition-colors flex items-center gap-2 shrink-0 ${
+                className={`backdrop-blur-md p-2 rounded-xl shadow-sm border transition-colors flex items-center gap-2 shrink-0 ${
                   weather !== 'sunny'
                     ? 'bg-slate-800/90 border-slate-700 text-white'
                     : 'bg-white/90 border-gray-100 text-gray-800'
@@ -1527,21 +1665,58 @@ export default function GameApp() {
       </div>
 
       <div className="absolute bottom-8 left-0 w-full z-30 pointer-events-none flex flex-col items-center justify-end h-48">
-        {plannedDistance > 0 && (
+        {/* Distance preview for exploration mode */}
+        {gameMode === 'exploration' && plannedDistance > 0 && (
           <div className="mb-2 bg-black/70 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full shadow-md pointer-events-auto animate-in fade-in slide-in-from-bottom-2">
             Walk {Math.round(plannedDistance)}m
           </div>
         )}
 
+        {/* Story mode: Show distance to next checkpoint - Lightweight version */}
+        {gameMode === 'story' && stats && (() => {
+          const nextCheckpoint = getNextStoryCheckpoint();
+          if (!nextCheckpoint) return null;
+          const distance = calculateDistance(stats.currentLocation, nextCheckpoint.location);
+          const stepsNeeded = Math.ceil(distance / METERS_PER_STEP);
+          const canReach = stats.availableSteps * METERS_PER_STEP >= distance;
+          return (
+            <div className="mb-2 text-center pointer-events-auto">
+              <span className="text-xs text-gray-600 font-medium">
+                {canReach ? (
+                  <span className="text-green-600">→ {nextCheckpoint.name}</span>
+                ) : (
+                  <span>{Math.round(distance)}m to {nextCheckpoint.name}</span>
+                )}
+              </span>
+            </div>
+          );
+        })()}
+
         <div className="w-full relative flex items-end justify-center px-6 pb-2">
           <div className="flex-1"></div>
+          
+          {/* Movement Control - Different for each mode */}
           <div className="pointer-events-auto mx-4 relative">
-            <Joystick
-              onMove={handleJoystickMove}
-              onStop={handleJoystickStop}
-              disabled={isAddingLocation || activeDialog !== null || showOutOfStepsModal}
-            />
+            {gameMode === 'exploration' ? (
+              // Exploration mode: Joystick
+              <Joystick
+                onMove={handleJoystickMove}
+                onStop={handleJoystickStop}
+                disabled={isAddingLocation || activeDialog !== null || showOutOfStepsModal}
+              />
+            ) : (
+              // Story mode: Linear movement button
+              <button
+                onClick={handleStoryModeMove}
+                disabled={isAddingLocation || activeDialog !== null || showOutOfStepsModal || !getNextStoryCheckpoint()}
+                className="w-20 h-20 rounded-full bg-brand-500 hover:bg-brand-600 text-white shadow-lg flex items-center justify-center transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Move towards next checkpoint"
+              >
+                <Footprints className="w-10 h-10" />
+              </button>
+            )}
           </div>
+
           <div className="flex-1 flex flex-col gap-3 items-end pointer-events-auto">
             <button
               onClick={() => setIsAddingLocation(!isAddingLocation)}
@@ -1550,12 +1725,6 @@ export default function GameApp() {
               }`}
             >
               {isAddingLocation ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
-            </button>
-            <button
-              onClick={() => handleAddSteps(1000)}
-              className="bg-brand-500 hover:bg-brand-600 text-white p-3.5 rounded-full shadow-lg transition-transform active:scale-95"
-            >
-              <Footprints className="w-6 h-6" />
             </button>
           </div>
         </div>

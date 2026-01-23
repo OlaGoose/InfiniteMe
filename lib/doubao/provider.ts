@@ -130,15 +130,49 @@ export class DoubaoProvider {
    * Parse JSON from response text (handles cases where AI returns text with JSON)
    */
   static parseJSONResponse(text: string): any {
-    try {
-      return JSON.parse(text);
-    } catch {
-      // Try to extract JSON from text
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-      throw new Error('No valid JSON found in response');
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid input: text must be a non-empty string');
     }
+
+    // Trim whitespace
+    const trimmed = text.trim();
+    
+    // Try direct parse first
+    try {
+      const parsed = JSON.parse(trimmed);
+      // If parsed is a string, it might be a JSON string inside
+      if (typeof parsed === 'string' && parsed.trim().startsWith('{')) {
+        return JSON.parse(parsed);
+      }
+      return parsed;
+    } catch {
+      // Try to extract JSON from text (handles markdown code blocks, etc.)
+      // Remove markdown code blocks if present
+      const withoutMarkdown = trimmed
+        .replace(/```json\s*/g, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      // Try parsing again after removing markdown
+      try {
+        return JSON.parse(withoutMarkdown);
+      } catch {
+        // Try to find JSON object in the text
+        const jsonMatch = withoutMarkdown.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            return JSON.parse(jsonMatch[0]);
+          } catch {
+            // Last resort: try to find any JSON-like structure
+            const nestedMatch = jsonMatch[0].match(/\{[\s\S]*\}/);
+            if (nestedMatch && nestedMatch[0] !== jsonMatch[0]) {
+              return JSON.parse(nestedMatch[0]);
+            }
+          }
+        }
+      }
+    }
+    
+    throw new Error('No valid JSON found in response');
   }
 }
