@@ -1,0 +1,166 @@
+/**
+ * StepTrek Design System
+ * Inspired by u0's warm, elegant color palette
+ * 
+ * Key Features:
+ * - Warm caramel/amber color scheme
+ * - Consistent rounded corners (12px base)
+ * - Soft shadows and transitions
+ * - Professional yet approachable
+ */
+
+:root {
+  /* === Core Colors === */
+  --color-primary: #c3815a;           /* Warm caramel */
+  --color-primary-hover: #b07350;     /* Darker caramel */
+  --color-primary-light: #d4956f;     /* Lighter caramel */
+  
+  --color-background: #fefcfb;        /* Warm off-white */
+  --color-foreground: #1a1a1a;        /* Near black */
+  
+  --color-secondary: #fff1ea;         /* Light peach */
+  --color-secondary-foreground: #c3815a;
+  
+  --color-accent: #ffeadf;            /* Pale orange */
+  --color-accent-foreground: #c3815a;
+  
+  --color-muted: #fff8f5;             /* Very light peach */
+  --color-muted-foreground: #6b6b6b;  /* Medium gray */
+  
+  /* === Border & Input === */
+  --color-border: #ffe3d4;            /* Soft peach border */
+  --color-input: #ffe3d4;
+  --color-ring: #c3815a;              /* Focus ring */
+  
+  /* === Status Colors === */
+  --color-success: #4ade80;           /* Green */
+  --color-warning: #fb923c;           /* Orange */
+  --color-error: #ef4444;             /* Red */
+  --color-info: #3b82f6;              /* Blue */
+  
+  /* === Gradients === */
+  --gradient-warm: linear-gradient(135deg, #c3815a 0%, #d4956f 100%);
+  --gradient-soft: linear-gradient(135deg, #fff1ea 0%, #ffeadf 100%);
+  --gradient-hero: linear-gradient(135deg, #c3815a 0%, #d4956f 50%, #e8a984 100%);
+  
+  /* === Spacing === */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  
+  /* === Weather/Game Specific === */
+  --color-weather-sunny: #fbbf24;
+  --color-weather-rain: #60a5fa;
+  --color-weather-storm: #818cf8;
+  --color-weather-snow: #e0f2fe;
+  --color-weather-heat: #f97316;
+  
+  /* === Difficulty Colors === */
+  --color-difficulty-basic: #86efac;      /* Light green */
+  --color-difficulty-beginner: #4ade80;   /* Green */
+  --color-difficulty-intermediate: #fb923c; /* Orange */
+  --color-difficulty-advanced: #ef4444;   /* Red */
+}
+
+.dark {
+  --color-background: #1a1a1a;
+  --color-foreground: #fefcfb;
+  --color-card: #262626;
+  --color-muted: #404040;
+  /* ... dark mode colors can be added later if needed */
+}
+
+/* === Utility Classes === */
+.bg-warm-gradient {
+  background: var(--gradient-warm);
+}
+
+.bg-soft-gradient {
+  background: var(--gradient-soft);
+}
+
+.bg-hero-gradient {
+  background: var(--gradient-hero);
+}
+
+.text-primary {
+  color: var(--color-primary);
+}
+
+.bg-primary {
+  background-color: var(--color-primary);
+}
+
+.bg-primary-hover:hover {
+  background-color: var(--color-primary-hover);
+}
+
+.border-primary {
+  border-color: var(--color-primary);
+}
+
+.shadow-warm {
+  box-shadow: 0 10px 40px -10px rgba(195, 129, 90, 0.3);
+}
+
+/* === Component Base Styles === */
+.card-warm {
+  background-color: var(--color-card, #ffffff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-warm {
+  background: var(--gradient-warm);
+  color: white;
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s ease;
+}
+
+.button-warm:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+}
+
+.button-warm:active {
+  transform: scale(0.98);
+}
+
+.input-warm {
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+}
+
+.input-warm:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(195, 129, 90, 0.1);
+}
+
+/* === Backdrop Effects === */
+.backdrop-warm {
+  backdrop-filter: blur(12px);
+  background-color: rgba(254, 252, 251, 0.8);
+}
+
+.backdrop-warm-dark {
+  backdrop-filter: blur(12px);
+  background-color: rgba(195, 129, 90, 0.1);
+}

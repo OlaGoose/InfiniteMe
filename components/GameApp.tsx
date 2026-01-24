@@ -1235,7 +1235,7 @@ export default function GameApp() {
   const WeatherIcon = ({ type }: { type: WeatherType }) => {
     switch (type) {
       case 'rain':
-        return <CloudRain className="w-4 h-4 text-blue-300" />;
+        return <CloudRain className="w-4 h-4 text-orange-200" />;
       case 'storm':
         return <CloudLightning className="w-4 h-4 text-yellow-300" />;
       case 'snow':
@@ -1250,8 +1250,11 @@ export default function GameApp() {
   // Show loading screen only during initial data load
   if (isInitializing || !stats) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700">
-        <Loader2 className="w-8 h-8 animate-spin text-white" />
+      <div className="w-full h-screen flex items-center justify-center bg-warm-gradient">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 animate-spin text-white drop-shadow-lg" />
+          <p className="text-white font-medium">Loading your adventure...</p>
+        </div>
       </div>
     );
   }
@@ -1259,68 +1262,68 @@ export default function GameApp() {
   // Start screen - shown before the game begins
   if (!hasStarted) {
     return (
-      <div className="absolute inset-0 z-[200] bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 flex flex-col items-center justify-center p-6 sm:p-8 text-white overflow-hidden">
-        {/* Background decorations */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400/20 blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-400/20 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
+      <div className="absolute inset-0 z-[200] bg-gradient-warm-hero flex flex-col items-center justify-center p-6 sm:p-8 text-white overflow-hidden">
+        {/* Background decorations - warm tones */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-300/20 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-orange-300/20 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
         
         {/* Main content */}
         <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center animate-in fade-in zoom-in duration-500">
-          {/* App icon */}
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center mb-6 sm:mb-8 shadow-2xl border border-white/20 transition-transform hover:scale-105">
-            <Footprints className="w-10 h-10 sm:w-12 sm:h-12 text-blue-300" />
+          {/* App icon - warm styling */}
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center mb-6 sm:mb-8 shadow-warm border border-white/20 transition-transform hover:scale-105">
+            <Footprints className="w-10 h-10 sm:w-12 sm:h-12 text-orange-100" />
           </div>
           
           {/* App name and tagline */}
           <h1 className="text-4xl sm:text-5xl font-black mb-3 sm:mb-4 tracking-tight drop-shadow-lg">
             StepTrek
           </h1>
-          <p className="text-blue-100/80 text-base sm:text-lg mb-6 sm:mb-8 leading-relaxed font-medium">
+          <p className="text-orange-50/90 text-base sm:text-lg mb-6 sm:mb-8 leading-relaxed font-medium">
             Language mastery at every step
           </p>
 
-          {/* Mode Selection */}
+          {/* Mode Selection - Warm styling */}
           {gameMode === null ? (
             <div className="w-full flex flex-col gap-3 sm:gap-4 mb-6 animate-in slide-in-from-bottom-4 duration-500">
-              <h2 className="text-lg sm:text-xl font-bold mb-2">Choose Your Adventure</h2>
+              <h2 className="text-lg sm:text-xl font-bold mb-2 text-orange-50">Choose Your Adventure</h2>
               
-              {/* Story Mode Button */}
+              {/* Story Mode Button - Warm theme */}
               <button
                 onClick={() => {
                   setGameMode('story');
                   setExplorationInitialized(false);
                 }}
-                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-2xl font-bold text-base shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-center justify-between gap-3 border border-white/20 group"
+                className="w-full bg-white/15 backdrop-blur-xl text-white py-4 px-6 rounded-warm-2xl font-semibold text-base shadow-warm-md hover:bg-white/25 hover:shadow-warm-lg active:scale-[0.98] transition-all flex items-center justify-between gap-3 border border-white/30 group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/10 rounded-xl group-hover:bg-white/20 transition-colors">
+                  <div className="p-2 bg-white/15 rounded-warm-xl group-hover:bg-white/25 transition-all duration-200">
                     <BookOpen className="w-5 h-5" />
                   </div>
                   <div className="text-left">
                     <div className="font-bold">Story Mode</div>
-                    <div className="text-xs text-blue-200/80 font-normal">Guided Journey</div>
+                    <div className="text-xs text-orange-100/70 font-normal">Guided Journey</div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
               </button>
 
-              {/* Exploration Mode Button */}
+              {/* Exploration Mode Button - Warm theme */}
               <button
                 onClick={() => {
                   setGameMode('exploration');
                 }}
-                className="w-full bg-white/10 backdrop-blur-xl text-white py-4 px-6 rounded-2xl font-bold text-base shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-center justify-between gap-3 border border-white/20 group"
+                className="w-full bg-white/15 backdrop-blur-xl text-white py-4 px-6 rounded-warm-2xl font-semibold text-base shadow-warm-md hover:bg-white/25 hover:shadow-warm-lg active:scale-[0.98] transition-all flex items-center justify-between gap-3 border border-white/30 group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/10 rounded-xl group-hover:bg-white/20 transition-colors">
+                  <div className="p-2 bg-white/15 rounded-warm-xl group-hover:bg-white/25 transition-all duration-200">
                     <Globe className="w-5 h-5" />
                   </div>
                   <div className="text-left">
                     <div className="font-bold">Free Exploration</div>
-                    <div className="text-xs text-blue-200/80 font-normal">Open World</div>
+                    <div className="text-xs text-orange-100/70 font-normal">LA Hollywood</div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all" />
+                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
               </button>
             </div>
           ) : gameMode === 'story' && selectedStory === null ? (
@@ -1352,7 +1355,7 @@ export default function GameApp() {
                     <div className="text-3xl sm:text-4xl group-hover:scale-110 transition-transform">{story.icon}</div>
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-base mb-1.5">{story.name}</div>
-                      <div className="text-xs text-blue-200/80 mb-3 leading-relaxed">{story.description}</div>
+                      <div className="text-xs text-orange-100/80 mb-3 leading-relaxed">{story.description}</div>
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className="px-2 py-1 bg-white/10 rounded-full border border-white/20">
                           {story.totalCheckpoints} checkpoints
@@ -1362,7 +1365,7 @@ export default function GameApp() {
                         </span>
                         <span className={`px-2 py-1 rounded-full border ${
                           story.difficulty === 'basic' ? 'bg-green-500/20 border-green-400/30 text-green-200' :
-                          story.difficulty === 'beginner' ? 'bg-blue-500/20 border-blue-400/30 text-blue-200' :
+                          story.difficulty === 'beginner' ? 'bg-orange-500/20 border-blue-400/30 text-blue-200' :
                           story.difficulty === 'intermediate' ? 'bg-yellow-500/20 border-yellow-400/30 text-yellow-200' :
                           'bg-red-500/20 border-red-400/30 text-red-200'
                         }`}>
@@ -1383,7 +1386,7 @@ export default function GameApp() {
                     <div className="text-3xl">{STORIES[selectedStory].icon}</div>
                     <div className="flex-1">
                       <div className="font-bold text-base">{STORIES[selectedStory].name}</div>
-                      <div className="text-xs text-blue-200/80 mt-0.5">Story Mode</div>
+                      <div className="text-xs text-orange-100/80 mt-0.5">Story Mode</div>
                     </div>
                   </div>
                   <button
@@ -1392,7 +1395,7 @@ export default function GameApp() {
                       setSelectedStory(null);
                       setExplorationInitialized(false);
                     }}
-                    className="text-xs text-blue-200/80 hover:text-white transition-colors underline"
+                    className="text-xs text-orange-100/80 hover:text-white transition-colors underline"
                   >
                     Change story
                   </button>
@@ -1402,7 +1405,7 @@ export default function GameApp() {
               {/* Start button */}
               <button
                 onClick={handleStartGame}
-                className="w-full bg-white text-blue-700 py-5 px-8 rounded-2xl font-black text-lg shadow-2xl hover:scale-[1.02] hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 group"
+                className="w-full bg-white text-primary-hover py-5 px-8 rounded-2xl font-black text-lg shadow-2xl hover:scale-[1.02] hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3 group"
               >
                 <Activity className="w-6 h-6 group-hover:animate-pulse" />
                 {gameMode === 'story' ? 'Start Story' : 'Start Exploring'}
@@ -1450,7 +1453,7 @@ export default function GameApp() {
             weather === 'rain'
               ? 'bg-slate-900'
               : weather === 'storm'
-                ? 'bg-indigo-900'
+                ? 'bg-amber-900'
                 : weather === 'snow'
                   ? 'bg-slate-200 opacity-50'
                   : 'bg-orange-500 opacity-10'
@@ -1551,8 +1554,8 @@ export default function GameApp() {
 
       {isGeneratingWorld && !isInitializing && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none w-max">
-          <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-purple-100">
-            <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
+          <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-orange-100">
+            <Loader2 className="w-4 h-4 text-primary animate-spin" />
             <span className="text-xs font-bold text-purple-800">Generating local world...</span>
           </div>
         </div>
@@ -1627,7 +1630,7 @@ export default function GameApp() {
                     Sky
                   </span>
                   {weather !== 'sunny' ? (
-                    <span className="text-base font-black text-blue-300 leading-none tabular-nums">
+                    <span className="text-base font-black text-orange-200 leading-none tabular-nums">
                       {weatherTimeLeft}s
                     </span>
                   ) : (
@@ -1640,9 +1643,9 @@ export default function GameApp() {
             <div className="flex gap-2 pointer-events-auto">
               <button
                 onClick={() => setShowHistoryLog(true)}
-                className="bg-white/90 p-2.5 rounded-full shadow-lg hover:bg-purple-50 transition-colors"
+                className="bg-white/90 p-2.5 rounded-full shadow-lg hover:bg-orange-50 transition-colors"
               >
-                <History className="w-5 h-5 text-purple-600" />
+                <History className="w-5 h-5 text-primary" />
               </button>
               <button
                 onClick={() => setShowFlashcardDeck(true)}
@@ -1841,8 +1844,8 @@ export default function GameApp() {
                     <div
                       className={`py-3 px-5 text-[15px] leading-relaxed shadow-sm backdrop-blur-sm ${
                         msg.role === 'user'
-                          ? 'bg-gray-900 text-white rounded-[20px] rounded-br-sm'
-                          : 'bg-white/80 text-gray-800 rounded-[20px] rounded-bl-sm border border-white/50'
+                          ? 'bg-gray-900 text-white rounded-warm-2xl rounded-br-sm'
+                          : 'bg-white/80 text-gray-800 rounded-warm-2xl rounded-bl-sm border border-white/50'
                       }`}
                       onMouseUp={msg.role === 'model' ? handleTextSelection : undefined}
                     >
@@ -1901,8 +1904,8 @@ export default function GameApp() {
                           disabled={translatingMessageId === msg.id}
                           className={`p-1.5 rounded-full transition-all ${
                             translatingMessageId === msg.id
-                              ? 'text-blue-600 bg-blue-50 cursor-wait'
-                              : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                              ? 'text-primary bg-orange-50 cursor-wait'
+                              : 'text-gray-400 hover:text-primary hover:bg-orange-50'
                           }`}
                           title="翻译"
                         >
@@ -1955,8 +1958,8 @@ export default function GameApp() {
                           disabled={optimizingMessageId === msg.id}
                           className={`p-1.5 rounded-full transition-all ${
                             optimizingMessageId === msg.id
-                              ? 'text-purple-600 bg-purple-50 cursor-wait'
-                              : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'
+                              ? 'text-primary bg-orange-50 cursor-wait'
+                              : 'text-gray-400 hover:text-primary hover:bg-orange-50'
                           }`}
                           title="优化表达"
                         >
@@ -1973,7 +1976,7 @@ export default function GameApp() {
                         className={`mt-2 w-full backdrop-blur-sm border rounded-2xl p-3 shadow-sm ${
                           msg.translation.includes('失败') || msg.translation.includes('不可用')
                             ? 'bg-red-50/80 border-red-200'
-                            : 'bg-blue-50/80 border-blue-100'
+                            : 'bg-orange-50/80 border-orange-100'
                         }`}
                       >
                         <div className="flex items-start gap-2">
@@ -1981,7 +1984,7 @@ export default function GameApp() {
                             className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
                               msg.translation.includes('失败') || msg.translation.includes('不可用')
                                 ? 'text-red-500'
-                                : 'text-blue-500'
+                                : 'text-primary'
                             }`}
                           />
                           <div
@@ -2001,7 +2004,7 @@ export default function GameApp() {
                         className={`mt-2 w-full backdrop-blur-sm border rounded-2xl p-3 shadow-sm ${
                           msg.optimization.includes('失败') || msg.optimization.includes('不可用')
                             ? 'bg-red-50/80 border-red-200'
-                            : 'bg-purple-50/80 border-purple-100'
+                            : 'bg-orange-50/80 border-orange-100'
                         }`}
                       >
                         <div className="flex items-start gap-2">
@@ -2035,7 +2038,7 @@ export default function GameApp() {
                   <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0 border border-gray-100">
                     <Bot className="w-4 h-4 text-brand-600" />
                   </div>
-                  <div className="bg-white/50 backdrop-blur-sm px-4 py-3 rounded-[20px] rounded-bl-sm border border-white/50 flex items-center gap-1">
+                  <div className="bg-white/50 backdrop-blur-sm px-4 py-3 rounded-warm-2xl rounded-bl-sm border border-white/50 flex items-center gap-1">
                     <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
                     <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-100" />
                     <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-200" />
@@ -2068,8 +2071,8 @@ export default function GameApp() {
                   onClick={handleVoiceToggle}
                   className={`p-3 rounded-full transition-all ${
                     isListening 
-                      ? 'bg-blue-50/80 text-blue-600' 
-                      : 'text-gray-400 hover:bg-gray-50 hover:text-blue-600'
+                      ? 'bg-orange-50/80 text-primary' 
+                      : 'text-gray-400 hover:bg-gray-50 hover:text-primary'
                   }`}
                 >
                   <Mic className="w-5 h-5" />
@@ -2108,8 +2111,8 @@ export default function GameApp() {
                   />
                   {/* ⭐ 临时文本指示 - 显示正在识别中 */}
                   {isListening && interimVoiceText && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-blue-500">
-                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-primary">
+                      <div className="w-1 h-1 bg-orange-500 rounded-full animate-pulse" />
                     </div>
                   )}
                 </div>
@@ -2417,9 +2420,9 @@ export default function GameApp() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide bg-white">
               {/* Nearby Places Selector */}
               {isLoadingPlaces && !isInitializing && (
-                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                  <span className="text-xs text-blue-700">Searching for nearby places...</span>
+                <div className="bg-orange-50 border border-orange-100 rounded-lg p-3 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                  <span className="text-xs text-primary-hover">Searching for nearby places...</span>
                 </div>
               )}
               
@@ -2741,8 +2744,8 @@ export default function GameApp() {
             <div className="relative p-4 bg-white border-b border-gray-100">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-purple-50 shadow-[0_1px_0_-1px_rgba(0,0,0,0.05),0_1px_1px_-1px_rgba(0,0,0,0.05),0_1px_2px_0_rgba(0,0,0,0.05),0_2px_6px_-1px_rgba(0,0,0,0.05)] border border-purple-100 flex items-center justify-center">
-                    <History className="w-5 h-5 text-purple-600" />
+                  <div className="w-10 h-10 rounded-full bg-orange-50 shadow-[0_1px_0_-1px_rgba(0,0,0,0.05),0_1px_1px_-1px_rgba(0,0,0,0.05),0_1px_2px_0_rgba(0,0,0,0.05),0_2px_6px_-1px_rgba(0,0,0,0.05)] border border-orange-100 flex items-center justify-center">
+                    <History className="w-5 h-5 text-primary" />
                   </div>
                   <div>
                     <h2 className="text-base font-bold text-gray-900">
@@ -2869,7 +2872,7 @@ export default function GameApp() {
                             <div className="relative flex-shrink-0">
                               <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                                 item.type === 'challenge' 
-                                  ? 'bg-purple-100' 
+                                  ? 'bg-warm-200' 
                                   : item.type === 'shop'
                                     ? 'bg-orange-100'
                                     : 'bg-blue-100'
@@ -2882,11 +2885,11 @@ export default function GameApp() {
                                   />
                                 ) : (
                                   item.type === 'challenge' ? (
-                                    <Target className="w-6 h-6 text-purple-600" />
+                                    <Target className="w-6 h-6 text-primary" />
                                   ) : item.type === 'shop' ? (
                                     <ShoppingBag className="w-6 h-6 text-orange-600" />
                                   ) : (
-                                    <MessageSquare className="w-6 h-6 text-blue-600" />
+                                    <MessageSquare className="w-6 h-6 text-primary" />
                                   )
                                 )}
                               </div>
@@ -2896,7 +2899,7 @@ export default function GameApp() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <div className="flex-1 min-w-0">
-                                  <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-purple-600 transition-colors">
+                                  <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-primary transition-colors">
                                     {item.checkpointName}
                                   </h3>
                                   <p className="text-xs text-gray-600 truncate">{item.npcRole}</p>

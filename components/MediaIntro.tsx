@@ -79,7 +79,7 @@ export default function MediaIntro({ media, onClose, onComplete }: MediaIntroPro
 
       case 'audio':
         return (
-          <div className="w-full bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg p-8">
+          <div className="w-full bg-gradient-to-br from-primary to-amber-500 rounded-lg p-8">
             <div className="flex flex-col items-center justify-center space-y-6">
               <div className="w-32 h-32 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
                 {isPlaying ? (
@@ -148,7 +148,7 @@ export default function MediaIntro({ media, onClose, onComplete }: MediaIntroPro
 
       case 'text':
         return (
-          <div className="w-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-8">
+          <div className="w-full bg-gradient-to-br from-warm-100 to-warm-200 rounded-lg p-8">
             <div className="prose prose-sm max-w-none">
               <div
                 className="whitespace-pre-wrap text-gray-800 leading-relaxed"
@@ -275,7 +275,7 @@ export default function MediaIntro({ media, onClose, onComplete }: MediaIntroPro
           </div>
           <button
             onClick={handleClose}
-            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-full hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition-all shadow-lg hover:shadow-xl"
+            className="px-6 py-3 bg-gradient-to-r from-primary to-primary-hover text-white font-semibold rounded-full hover:from-primary hover:to-indigo-700 active:scale-95 transition-all shadow-lg hover:shadow-xl"
           >
             Continue to Dialogue
           </button>
