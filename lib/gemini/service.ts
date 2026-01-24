@@ -1005,3 +1005,70 @@ export const generateCheckpointSuggestion = async (
 
   return generateRandomFallback(requestedType);
 };
+
+// ⭐ Generic text generation function for learning content
+export const generateText = async (prompt: string): Promise<string> => {
+  // Use API route if enabled (recommended for production)
+  if (USE_API_ROUTE) {
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'generateText',
+          prompt,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      }
+
+      const parsed = await response.json();
+      return parsed.text || '';
+    } catch (error: any) {
+      console.error('Generate text API route error:', error);
+      throw error;
+    }
+  }
+
+  // Fallback to direct API calls
+  if ((AI_PROVIDER === 'gemini' && (!genAI || !geminiApiKey)) ||
+      (AI_PROVIDER === 'openai' && (!openai || !openaiApiKey)) ||
+      (AI_PROVIDER === 'auto' && !genAI && !openai)) {
+    throw new Error('No AI provider available');
+  }
+
+  // Try Gemini first
+  if (AI_PROVIDER === 'gemini' || (AI_PROVIDER === 'auto' && genAI && geminiApiKey)) {
+    if (genAI) {
+      try {
+        const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+        const result = await model.generateContent(prompt);
+        return result.response.text() || '';
+      } catch (error) {
+        if (AI_PROVIDER !== 'auto') throw error;
+      }
+    }
+  }
+
+  // Use OpenAI
+  if (openai && openaiApiKey) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: 'You are a helpful English learning content generator. Always respond with valid JSON when requested.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      });
+      return completion.choices[0]?.message?.content || '';
+    } catch (e) {
+      throw new Error('Text generation failed');
+    }
+  }
+
+  throw new Error('No AI provider available');
+};

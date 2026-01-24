@@ -62,6 +62,8 @@ export async function POST(request: NextRequest) {
         return await handleAnalyzeSelection(params);
       case 'generateCheckpointSuggestion':
         return await handleGenerateCheckpointSuggestion(params);
+      case 'generateText':
+        return await handleGenerateText(params);
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
@@ -627,5 +629,91 @@ async function handleGenerateCheckpointSuggestion(params: any) {
   }
 
   throw new Error('No AI provider available');
+}
+
+async function handleGenerateText(params: any) {
+  const { prompt } = params;
+
+  if (!prompt || typeof prompt !== 'string') {
+    return NextResponse.json({ error: 'Invalid prompt parameter' }, { status: 400 });
+  }
+
+  let lastError: any = null;
+
+  // Try Doubao first
+  if (doubao && doubaoApiKey) {
+    try {
+      console.log('🔄 [GenerateText] Trying Doubao...');
+      const completion = await doubao.chat(
+        [
+          {
+            role: 'system',
+            content: 'You are a helpful English learning content generator. Always respond with valid JSON when requested.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        { temperature: 0.7 }
+      );
+      const text = completion.choices[0]?.message?.content;
+      if (text) {
+        console.log('✅ [GenerateText] Doubao succeeded');
+        return NextResponse.json({ text });
+      }
+    } catch (error: any) {
+      lastError = error;
+      console.warn('❌ [GenerateText] Doubao failed:', error?.message || error);
+    }
+  }
+
+  // Try OpenAI
+  if (openai && openaiApiKey) {
+    try {
+      console.log('🔄 [GenerateText] Trying OpenAI...');
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful English learning content generator. Always respond with valid JSON when requested.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      });
+      const text = completion.choices[0]?.message?.content;
+      if (text) {
+        console.log('✅ [GenerateText] OpenAI succeeded');
+        return NextResponse.json({ text });
+      }
+    } catch (error: any) {
+      lastError = error;
+      console.warn('❌ [GenerateText] OpenAI failed:', error?.message || error);
+    }
+  }
+
+  // Try Gemini
+  if (genAI && geminiApiKey) {
+    try {
+      console.log('🔄 [GenerateText] Trying Gemini...');
+      const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      if (text) {
+        console.log('✅ [GenerateText] Gemini succeeded');
+        return NextResponse.json({ text });
+      }
+    } catch (error: any) {
+      lastError = error;
+      console.warn('❌ [GenerateText] Gemini failed:', error?.message || error);
+    }
+  }
+
+  // All providers failed
+  const errorMessage = lastError?.message || 'No AI provider available';
+  console.error('❌ [GenerateText] All providers failed. Last error:', errorMessage);
+  return NextResponse.json(
+    { error: `All AI providers failed. Last error: ${errorMessage}` },
+    { status: 500 }
+  );
 }
 

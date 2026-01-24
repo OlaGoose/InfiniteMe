@@ -7,6 +7,73 @@ export type MapStyle = 'light' | 'dark' | 'satellite';
 
 export type CheckpointType = 'chat' | 'challenge' | 'shop';
 
+// Learning stages for structured learning flow
+export type LearningStage = 
+  | 'welcome'           // 1. Welcome & scenario introduction with media
+  | 'vocabulary'        // 2. Vocabulary preview with images and audio
+  | 'listening'         // 3. Listening comprehension practice
+  | 'pronunciation'     // 4. Pronunciation practice with speech recognition
+  | 'pattern'          // 5. Sentence pattern practice (fill-in-blanks, multiple choice)
+  | 'guided'           // 6. Guided conversation with scaffolding
+  | 'free'             // 7. Free conversation practice
+  | 'review'           // 8. Review and reward
+  | 'completed';       // 9. Stage completed
+
+export interface VocabularyItem {
+  word: string;
+  translation: string;
+  phonetic?: string;
+  audioUrl?: string;
+  imageUrl?: string;
+  exampleSentence: string;
+  exampleTranslation: string;
+}
+
+export interface PatternPractice {
+  id: string;
+  type: 'fill-blank' | 'multiple-choice' | 'arrange-words';
+  question: string;
+  correctAnswer: string;
+  options?: string[];  // For multiple choice
+  words?: string[];    // For arrange words
+  hint?: string;
+}
+
+export interface ListeningExercise {
+  id: string;
+  audioText: string;
+  question: string;
+  options: string[];
+  correctAnswer: string;
+}
+
+export interface PronunciationExercise {
+  id: string;
+  targetSentence: string;
+  translation: string;
+  audioUrl?: string;
+  minimumScore: number; // 0-100
+}
+
+export interface LearningProgress {
+  checkpointId: string;
+  currentStage: LearningStage;
+  stageProgress: {
+    welcome: boolean;
+    vocabulary: number;        // 0-100%
+    listening: number;         // 0-100%
+    pronunciation: number;     // 0-100%
+    pattern: number;           // 0-100%
+    guided: number;            // 0-100%
+    free: number;              // 0-100%
+    review: boolean;
+  };
+  vocabularyMastery: { [word: string]: number }; // 0-100 per word
+  overallScore: number;      // 0-100
+  completedAt?: number;
+  earnedSteps: number;
+}
+
 export type DifficultyLevel = 'basic' | 'beginner' | 'intermediate' | 'advanced';
 
 export type WeatherType = 'sunny' | 'rain' | 'storm' | 'snow' | 'heatwave';

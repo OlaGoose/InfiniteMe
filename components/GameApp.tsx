@@ -61,6 +61,12 @@ import {
   CheckpointType,
   GameMode,
   StoryId,
+  LearningStage,
+  LearningProgress,
+  VocabularyItem,
+  PatternPractice,
+  ListeningExercise,
+  PronunciationExercise,
 } from '@/types';
 import { calculateNextReview, getDueCards, getStudyStats } from '@/utils/anki';
 import {
@@ -143,6 +149,25 @@ export default function GameApp() {
   const [translatingMessageId, setTranslatingMessageId] = useState<string | null>(null);
   const [optimizingMessageId, setOptimizingMessageId] = useState<string | null>(null);
   const [pedometerSteps, setPedometerSteps] = useState(0);
+  const [selectedCardIndex, setSelectedCardIndex] = useState(0); // Default to first card
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
+
+  // ⭐ New Learning System States
+  const [showLearningFlow, setShowLearningFlow] = useState(false);
+  const [currentLearningCheckpoint, setCurrentLearningCheckpoint] = useState<Checkpoint | null>(null);
+  const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
+  const [vocabularyItems, setVocabularyItems] = useState<VocabularyItem[]>([]);
+  const [patternExercises, setPatternExercises] = useState<PatternPractice[]>([]);
+  const [listeningExercises, setListeningExercises] = useState<ListeningExercise[]>([]);
+  const [pronunciationExercises, setPronunciationExercises] = useState<PronunciationExercise[]>([]);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [isGeneratingLearningContent, setIsGeneratingLearningContent] = useState(false);
+  const [conversationGoal, setConversationGoal] = useState<string>('');
+  const [conversationTurns, setConversationTurns] = useState(0);
+  const [conversationMaxTurns, setConversationMaxTurns] = useState(10);
+  const [conversationCompleted, setConversationCompleted] = useState(false);
+  const [conversationSummary, setConversationSummary] = useState<{ score: number; feedback: string; success: boolean } | null>(null);
 
   const activeDialogRef = useRef(activeDialog);
   useEffect(() => {
@@ -588,6 +613,167 @@ export default function GameApp() {
     }
   };
 
+  // Handle card selection - sets mode/story and starts game
+  const handleCardSelect = async (card: { type: 'exploration' | 'story'; storyId?: StoryId }) => {
+    // Set mode and story first
+    if (card.type === 'exploration') {
+      setGameMode('exploration');
+      setSelectedStory(null);
+    } else if (card.type === 'story' && card.storyId) {
+      setGameMode('story');
+      setSelectedStory(card.storyId);
+      setExplorationInitialized(false);
+    }
+    
+    // Wait a bit for state to update, then start game
+    // We pass the card info directly to avoid relying on state
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Create a temporary function that uses the card info directly
+    const startWithCard = async () => {
+      // Validate and start game with the selected card
+      if (card.type === 'exploration') {
+        // Request motion sensor permission (iOS 13+)
+        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+          try {
+            await (DeviceMotionEvent as any).requestPermission();
+          } catch (e) {
+            console.warn('Motion permission denied:', e);
+          }
+        }
+        
+        // Get user location and initialize game
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords;
+              const userPos = { lat: latitude, lng: longitude };
+              
+              setHasStarted(true);
+              
+              // Initialize exploration checkpoints
+              const currentCheckpoints = checkpointsRef.current;
+              const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.every(id =>
+                currentCheckpoints.some(cp => cp.id === id)
+              );
+              const hasOldExplorationCheckpoints = currentCheckpoints.some(cp =>
+                !cp.storyId && !EXPLORATION_INITIAL_CHECKPOINT_IDS.includes(cp.id as any)
+              );
+              
+              if (!hasInitialCheckpoints || hasOldExplorationCheckpoints) {
+                const initialCheckpoints: Checkpoint[] = EXPLORATION_INITIAL_CHECKPOINTS.map(cp => ({
+                  ...cp,
+                  isUnlocked: true,
+                  isCompleted: false,
+                }));
+                setCheckpoints(initialCheckpoints);
+                await storageService.saveCheckpoints(initialCheckpoints);
+                setExplorationInitialized(true);
+              }
+              
+              if (stats) {
+                setStats(prev => prev ? { ...prev, currentLocation: LA_HOLLYWOOD_CENTER } : null);
+              }
+            },
+            async (error) => {
+              console.warn('Geolocation failed or denied:', error);
+              setHasStarted(true);
+              
+              const currentCheckpoints = checkpointsRef.current;
+              const hasInitialCheckpoints = EXPLORATION_INITIAL_CHECKPOINT_IDS.every(id =>
+                currentCheckpoints.some(cp => cp.id === id)
+              );
+              const hasOldExplorationCheckpoints = currentCheckpoints.some(cp =>
+                !cp.storyId && !EXPLORATION_INITIAL_CHECKPOINT_IDS.includes(cp.id as any)
+              );
+              
+              if (!hasInitialCheckpoints || hasOldExplorationCheckpoints) {
+                const initialCheckpoints: Checkpoint[] = EXPLORATION_INITIAL_CHECKPOINTS.map(cp => ({
+                  ...cp,
+                  isUnlocked: true,
+                  isCompleted: false,
+                }));
+                setCheckpoints(initialCheckpoints);
+                storageService.saveCheckpoints(initialCheckpoints);
+                setExplorationInitialized(true);
+              }
+              
+              if (stats) {
+                setStats(prev => prev ? { ...prev, currentLocation: LA_HOLLYWOOD_CENTER } : null);
+              }
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        } else {
+          setHasStarted(true);
+        }
+      } else if (card.type === 'story' && card.storyId) {
+        // Request motion sensor permission (iOS 13+)
+        if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+          try {
+            await (DeviceMotionEvent as any).requestPermission();
+          } catch (e) {
+            console.warn('Motion permission denied:', e);
+          }
+        }
+        
+        // Get user location and initialize game
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords;
+              const userPos = { lat: latitude, lng: longitude };
+              
+              setHasStarted(true);
+              
+              // Initialize story checkpoints
+              if (!card.storyId) return;
+              const story = STORIES[card.storyId];
+              const storyCheckpoints: Checkpoint[] = story.checkpoints.map((cp, index) => ({
+                ...cp,
+                isUnlocked: index === 0,
+                isCompleted: false,
+              }));
+              setCheckpoints(storyCheckpoints);
+              
+              const firstCheckpoint = story.checkpoints[0];
+              if (firstCheckpoint && stats) {
+                setStats(prev => prev ? { ...prev, currentLocation: firstCheckpoint.location } : null);
+              }
+              
+              await storageService.saveCheckpoints(storyCheckpoints);
+            },
+            async (error) => {
+              console.warn('Geolocation failed or denied:', error);
+              setHasStarted(true);
+              
+              if (!card.storyId) return;
+              const story = STORIES[card.storyId];
+              const storyCheckpoints: Checkpoint[] = story.checkpoints.map((cp, index) => ({
+                ...cp,
+                isUnlocked: index === 0,
+                isCompleted: false,
+              }));
+              setCheckpoints(storyCheckpoints);
+              
+              const firstCheckpoint = story.checkpoints[0];
+              if (firstCheckpoint && stats) {
+                setStats(prev => prev ? { ...prev, currentLocation: firstCheckpoint.location } : null);
+              }
+              
+              storageService.saveCheckpoints(storyCheckpoints);
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+          );
+        } else {
+          setHasStarted(true);
+        }
+      }
+    };
+    
+    await startWithCard();
+  };
+
   // Weather system
   useEffect(() => {
     const cycleInterval = setInterval(() => {
@@ -911,6 +1097,211 @@ export default function GameApp() {
     });
   }, [executeMove]);
 
+  // ⭐ Generate learning content using AI
+  const generateLearningContent = useCallback(async (checkpoint: Checkpoint) => {
+    setIsGeneratingLearningContent(true);
+    try {
+      // Generate learning content based on checkpoint scenario
+      const prompt = `You are an expert English teacher designing a structured lesson for an English learner.
+
+Scenario: ${checkpoint.scenario}
+NPC Role: ${checkpoint.npcRole}
+Difficulty: ${checkpoint.difficulty}
+Context: ${checkpoint.dialogPrompt}
+
+Create a comprehensive learning experience with the following components:
+
+1. VOCABULARY (3-5 key words/phrases):
+   - Select the most essential vocabulary for this scenario
+   - Include word, simple translation, phonetic, example sentence
+   
+2. LISTENING EXERCISES (2-3 questions):
+   - Create short dialogues (2-3 sentences) relevant to the scenario
+   - Each with a comprehension question and 3 multiple choice answers
+   
+3. PATTERN PRACTICE (3-4 exercises):
+   - Focus on common sentence patterns used in this scenario
+   - Include fill-in-the-blank, multiple choice, or word arrangement exercises
+   - IMPORTANT: For multiple-choice questions, the correctAnswer MUST exactly match one of the options (case-insensitive, ignoring punctuation)
+   - For fill-blank questions, provide the exact word or phrase that should fill the blank
+   
+4. PRONUNCIATION PRACTICE (2-3 sentences):
+   - Key phrases the learner should be able to say fluently
+   - Sentences that are practical and commonly used in this scenario
+
+Format your response as valid JSON with this structure:
+{
+  "vocabulary": [
+    {
+      "word": "greeting phrase or word",
+      "translation": "中文翻译",
+      "phonetic": "IPA or simple pronunciation",
+      "exampleSentence": "Example in context",
+      "exampleTranslation": "例句中文翻译"
+    }
+  ],
+  "listening": [
+    {
+      "id": "l1",
+      "audioText": "Short dialogue text to be read aloud",
+      "question": "Comprehension question about the dialogue",
+      "options": ["Option A", "Option B", "Option C"],
+      "correctAnswer": "Option A"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "p1",
+      "type": "fill-blank",
+      "question": "I ___ like to order a coffee.",
+      "correctAnswer": "would",
+      "hint": "Use a polite modal verb"
+    },
+    {
+      "id": "p2",
+      "type": "multiple-choice",
+      "question": "Where is Monica?",
+      "options": ["She is over there", "Over there", "There"],
+      "correctAnswer": "She is over there",
+      "hint": "Complete sentence answer"
+    }
+  ],
+  "pronunciation": [
+    {
+      "id": "pr1",
+      "targetSentence": "Could you please help me?",
+      "translation": "你能帮我吗？",
+      "minimumScore": 70
+    }
+  ]
+}
+
+Ensure all content is appropriate for ${checkpoint.difficulty} level and directly relevant to the scenario.`;
+
+      const response = await GeminiService.generateText(prompt);
+      
+      // Parse AI response
+      let contentData;
+      try {
+        // Try to extract JSON from the response
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          contentData = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON found in response');
+        }
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', parseError);
+        // Fallback to default content
+        contentData = generateDefaultLearningContent(checkpoint);
+      }
+
+      // Set learning content
+      setVocabularyItems(contentData.vocabulary || []);
+      setListeningExercises(contentData.listening || []);
+      setPatternExercises(contentData.patterns || []);
+      setPronunciationExercises(contentData.pronunciation || []);
+
+      // Update learning progress (it was already initialized in openDialog)
+      setLearningProgress(prev => {
+        if (prev) {
+          return {
+            ...prev,
+            checkpointId: checkpoint.id,
+          };
+        }
+        return prev;
+      });
+      setCurrentExerciseIndex(0);
+
+    } catch (error) {
+      console.error('Failed to generate learning content:', error);
+      // Use fallback content
+      const fallbackContent = generateDefaultLearningContent(checkpoint);
+      setVocabularyItems(fallbackContent.vocabulary);
+      setListeningExercises(fallbackContent.listening);
+      setPatternExercises(fallbackContent.patterns);
+      setPronunciationExercises(fallbackContent.pronunciation);
+      
+      // Progress should already be initialized in openDialog, but ensure it's set
+      setLearningProgress(prev => prev || {
+        checkpointId: checkpoint.id,
+        currentStage: 'welcome',
+        stageProgress: {
+          welcome: false,
+          vocabulary: 0,
+          listening: 0,
+          pronunciation: 0,
+          pattern: 0,
+          guided: 0,
+          free: 0,
+          review: false,
+        },
+        vocabularyMastery: {},
+        overallScore: 0,
+        earnedSteps: 0,
+      });
+    } finally {
+      setIsGeneratingLearningContent(false);
+    }
+  }, []);
+
+  // Fallback function to generate default learning content
+  const generateDefaultLearningContent = (checkpoint: Checkpoint) => {
+    return {
+      vocabulary: [
+        {
+          word: 'Hello',
+          translation: '你好',
+          phonetic: '/həˈloʊ/',
+          exampleSentence: 'Hello, how are you today?',
+          exampleTranslation: '你好，你今天怎么样？'
+        },
+        {
+          word: 'Thank you',
+          translation: '谢谢',
+          phonetic: '/θæŋk juː/',
+          exampleSentence: 'Thank you for your help!',
+          exampleTranslation: '谢谢你的帮助！'
+        },
+        {
+          word: 'Please',
+          translation: '请',
+          phonetic: '/pliːz/',
+          exampleSentence: 'Could you please help me?',
+          exampleTranslation: '你能帮帮我吗？'
+        }
+      ],
+      listening: [
+        {
+          id: 'l1',
+          audioText: 'Hello! Welcome to our store. How can I help you today?',
+          question: 'What is the speaker offering?',
+          options: ['Help', 'Food', 'Directions'],
+          correctAnswer: 'Help'
+        }
+      ],
+      patterns: [
+        {
+          id: 'p1',
+          type: 'fill-blank' as const,
+          question: 'Could you ___ help me?',
+          correctAnswer: 'please',
+          hint: 'A polite word'
+        }
+      ],
+      pronunciation: [
+        {
+          id: 'pr1',
+          targetSentence: 'Hello, how are you?',
+          translation: '你好，你怎么样？',
+          minimumScore: 70
+        }
+      ]
+    };
+  };
+
+  // ⭐ Start structured learning flow instead of direct dialog
   const openDialog = useCallback(
     async (cp: Checkpoint) => {
       if (!stats) return;
@@ -927,34 +1318,83 @@ export default function GameApp() {
         setActiveShop(cp);
         return;
       }
-      setChallengeRound(0);
-      setChallengeResult(null);
-      setActiveDialog({ checkpoint: cp, messages: [] });
-      setIsLoadingAI(true);
-      const response = await GeminiService.generateDialogue(cp, []);
-      setIsLoadingAI(false);
-      setActiveDialog(prev =>
-        prev
-          ? {
-              ...prev,
-              messages: [
-                {
-                  id: 'init',
-                  role: 'model',
-                  text: response.text,
-                  options: response.options,
-                  timestamp: Date.now(),
-                },
-              ],
-            }
-          : null
-      );
-      if (autoPlayRef.current) {
-        speakText(response.text);
-      }
+
+      // ⭐ NEW: Start with structured learning flow
+      // Immediately show the card and loading state for better UX
+      setCurrentLearningCheckpoint(cp);
+      setShowLearningFlow(true);
+      setIsGeneratingLearningContent(true);
+      
+      // Initialize with default progress immediately
+      const initialProgress: LearningProgress = {
+        checkpointId: cp.id,
+        currentStage: 'welcome',
+        stageProgress: {
+          welcome: false,
+          vocabulary: 0,
+          listening: 0,
+          pronunciation: 0,
+          pattern: 0,
+          guided: 0,
+          free: 0,
+          review: false,
+        },
+        vocabularyMastery: {},
+        overallScore: 0,
+        earnedSteps: 0,
+      };
+      setLearningProgress(initialProgress);
+      
+      // Generate content asynchronously (don't await - let UI render first)
+      generateLearningContent(cp).catch((error) => {
+        console.error('Failed to generate learning content:', error);
+        setToast({ message: 'Failed to generate lesson. Using default content.', type: 'warning' });
+      });
     },
-    [stats]
+    [stats, generateLearningContent]
   );
+
+  // ⭐ Function to transition from learning flow to free conversation
+  const startFreeConversation = useCallback(async () => {
+    if (!currentLearningCheckpoint) return;
+    
+    setShowLearningFlow(false);
+    setChallengeRound(0);
+    setChallengeResult(null);
+    setConversationCompleted(false);
+    setConversationSummary(null);
+    
+    // Set conversation goal and max turns
+    const goal = currentLearningCheckpoint.challengeConfig?.goalDescription || 
+                 `Have a natural conversation with ${currentLearningCheckpoint.npcRole} about ${currentLearningCheckpoint.scenario}`;
+    setConversationGoal(goal);
+    setConversationMaxTurns(10);
+    setConversationTurns(0);
+    
+    setActiveDialog({ checkpoint: currentLearningCheckpoint, messages: [] });
+    setIsLoadingAI(true);
+    const response = await GeminiService.generateDialogue(currentLearningCheckpoint, []);
+    setIsLoadingAI(false);
+    setActiveDialog(prev =>
+      prev
+        ? {
+            ...prev,
+            messages: [
+              {
+                id: 'init',
+                role: 'model',
+                text: response.text,
+                options: response.options,
+                timestamp: Date.now(),
+              },
+            ],
+          }
+        : null
+    );
+    if (autoPlayRef.current) {
+      speakText(response.text);
+    }
+  }, [currentLearningCheckpoint]);
 
   const handleCheckpointClick = async (cp: Checkpoint) => {
     if (!stats) return;
@@ -990,6 +1430,13 @@ export default function GameApp() {
     if (isChallenge) {
       setChallengeRound(prev => prev + 1);
     }
+    
+    // Update conversation turns for free conversation from learning flow
+    const isFreeConversation = currentLearningCheckpoint && dialog.checkpoint.id === currentLearningCheckpoint.id && !isChallenge;
+    if (isFreeConversation) {
+      setConversationTurns(prev => prev + 1);
+    }
+    
     setIsLoadingAI(true);
     try {
       const history = updatedMessages.map(m => ({ role: m.role, text: m.text }));
@@ -998,56 +1445,141 @@ export default function GameApp() {
       const maxTurns = dialog.checkpoint.challengeConfig?.maxTurns || 5;
       const userMsgCount = updatedMessages.filter(m => m.role === 'user').length;
       
+      // Check if free conversation goal is achieved or max turns reached (before generating response)
+      if (isFreeConversation && !conversationCompleted) {
+        const currentTurns = conversationTurns;
+        
+        // Goal-oriented: Check if goal is achieved (evaluate every turn starting from turn 2)
+        // This allows early completion when goal is achieved
+        if (currentTurns >= 2) {
+          try {
+            const evaluation = await GeminiService.evaluateChallenge(dialog.checkpoint, history);
+            
+            // Check if goal is achieved (score >= 70 or success flag)
+            const goalAchieved = evaluation.success || (evaluation.score || 0) >= 70;
+            
+            if (goalAchieved) {
+              setConversationCompleted(true);
+              setConversationSummary(evaluation);
+              
+              // Show success toast
+              setToast({ 
+                message: `🎉 Goal achieved in ${currentTurns} turns!`, 
+                type: 'success' 
+              });
+              
+              // Stop generating response if goal achieved
+              setIsLoadingAI(false);
+              return;
+            }
+            
+            // If max turns reached, complete anyway (even if goal not fully achieved)
+            if (currentTurns >= conversationMaxTurns) {
+              setConversationCompleted(true);
+              setConversationSummary(evaluation);
+              setIsLoadingAI(false);
+              return; // Stop here, don't generate response
+            }
+          } catch (error) {
+            console.error('Failed to evaluate conversation:', error);
+            
+            // If max turns reached and evaluation fails, show fallback summary
+            if (currentTurns >= conversationMaxTurns) {
+              setConversationCompleted(true);
+              setConversationSummary({
+                score: 0,
+                feedback: 'Conversation completed. Unable to evaluate due to network error. Please try again later.',
+                success: false
+              });
+              setToast({ 
+                message: 'Network error during evaluation. Conversation ended.', 
+                type: 'warning' 
+              });
+              setIsLoadingAI(false);
+              return;
+            }
+            
+            // If not max turns yet, continue conversation even if evaluation fails
+            // This allows the conversation to continue and try evaluation again next turn
+          }
+        }
+      }
+      
       // Handle negotiation dialog
       if (isNegotiation && userMsgCount >= 5) {
-        const evaluation = await GeminiService.evaluateShoppingDeal(
-          dialog.negotiatingItem!,
-          history
-        );
-        
-        if (evaluation.success) {
-          const discountedPrice = Math.floor(dialog.negotiatingItem!.price * 0.5);
-          if (!stats || stats.availableSteps < discountedPrice) {
+        try {
+          const evaluation = await GeminiService.evaluateShoppingDeal(
+            dialog.negotiatingItem!,
+            history
+          );
+          
+          if (evaluation.success) {
+            const discountedPrice = Math.floor(dialog.negotiatingItem!.price * 0.5);
+            if (!stats || stats.availableSteps < discountedPrice) {
+              setChallengeResult({
+                success: false,
+                feedback: `Great negotiation! However, you need ${discountedPrice} steps to complete this purchase. (You have ${stats?.availableSteps || 0} steps)`,
+              });
+            } else {
+              // Successful purchase with discount
+              setStats(prev => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  availableSteps: prev.availableSteps - discountedPrice,
+                  inventory: [...prev.inventory, dialog.negotiatingItem!.id],
+                };
+              });
+              setChallengeResult({
+                success: true,
+                feedback: `Excellent negotiation! You purchased ${dialog.negotiatingItem!.name} for ${discountedPrice} steps (50% off!). It's now in your inventory.`,
+              });
+            }
+          } else {
             setChallengeResult({
               success: false,
-              feedback: `Great negotiation! However, you need ${discountedPrice} steps to complete this purchase. (You have ${stats?.availableSteps || 0} steps)`,
-            });
-          } else {
-            // Successful purchase with discount
-            setStats(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                availableSteps: prev.availableSteps - discountedPrice,
-                inventory: [...prev.inventory, dialog.negotiatingItem!.id],
-              };
-            });
-            setChallengeResult({
-              success: true,
-              feedback: `Excellent negotiation! You purchased ${dialog.negotiatingItem!.name} for ${discountedPrice} steps (50% off!). It's now in your inventory.`,
+              feedback: evaluation.feedback || 'The shopkeeper wasn\'t convinced. Try being more polite and clear about your intent to buy.',
             });
           }
-        } else {
+        } catch (error) {
+          console.error('Failed to evaluate shopping deal:', error);
           setChallengeResult({
             success: false,
-            feedback: evaluation.feedback || 'The shopkeeper wasn\'t convinced. Try being more polite and clear about your intent to buy.',
+            feedback: 'Unable to evaluate negotiation due to network error. Please check your connection and try again.',
+          });
+          setToast({ 
+            message: 'Network error during evaluation. Please try again.', 
+            type: 'error' 
           });
         }
       } else if (isStandardChallenge && userMsgCount >= maxTurns) {
-        const evaluation = await GeminiService.evaluateChallenge(dialog.checkpoint, history);
-        setChallengeResult(evaluation);
-        if (evaluation.success) {
-          handleAddSteps(dialog.checkpoint.challengeConfig?.winReward || 0);
-        } else {
-          if (!stats) return;
-          setStats(prev => {
-            if (!prev) return prev;
-            const newValue = Math.max(
-              0,
-              prev.availableSteps - (dialog.checkpoint.challengeConfig?.losePenalty || 0)
-            );
-            if (newValue === 0 && prev.availableSteps > 0) setShowOutOfStepsModal(true);
-            return { ...prev, availableSteps: newValue };
+        try {
+          const evaluation = await GeminiService.evaluateChallenge(dialog.checkpoint, history);
+          setChallengeResult(evaluation);
+          if (evaluation.success) {
+            handleAddSteps(dialog.checkpoint.challengeConfig?.winReward || 0);
+          } else {
+            if (!stats) return;
+            setStats(prev => {
+              if (!prev) return prev;
+              const newValue = Math.max(
+                0,
+                prev.availableSteps - (dialog.checkpoint.challengeConfig?.losePenalty || 0)
+              );
+              if (newValue === 0 && prev.availableSteps > 0) setShowOutOfStepsModal(true);
+              return { ...prev, availableSteps: newValue };
+            });
+          }
+        } catch (error) {
+          console.error('Failed to evaluate challenge:', error);
+          setChallengeResult({
+            success: false,
+            score: 0,
+            feedback: 'Unable to evaluate challenge due to network error. Please check your connection and try again.',
+          });
+          setToast({ 
+            message: 'Network error during evaluation. Please try again.', 
+            type: 'error' 
           });
         }
       } else {
@@ -1096,6 +1628,56 @@ export default function GameApp() {
           speakText(npcText);
         }
       }
+      
+      // Check conversation completion after AI response (for free conversation)
+      // This handles the case where we reach max turns after AI responds, or goal achieved
+      if (isFreeConversation && !conversationCompleted) {
+        const currentTurns = conversationTurns;
+        
+        // Check if goal achieved or max turns reached after AI response
+        if (currentTurns >= 2) {
+          try {
+            // Get the latest messages including the AI response we just added
+            const latestMessages = activeDialogRef.current?.messages || [];
+            const finalHistory = latestMessages.map(m => ({ role: m.role, text: m.text }));
+            
+            const evaluation = await GeminiService.evaluateChallenge(dialog.checkpoint, finalHistory);
+            
+            // Check if goal is achieved
+            const goalAchieved = evaluation.success || (evaluation.score || 0) >= 70;
+            
+            // Complete if goal achieved OR max turns reached
+            if (goalAchieved || currentTurns >= conversationMaxTurns) {
+              setConversationCompleted(true);
+              setConversationSummary(evaluation);
+              
+              if (goalAchieved && currentTurns < conversationMaxTurns) {
+                setToast({ 
+                  message: `🎉 Goal achieved in ${currentTurns} turns!`, 
+                  type: 'success' 
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Failed to evaluate conversation:', error);
+            
+            // If max turns reached and evaluation fails, show fallback summary
+            if (currentTurns >= conversationMaxTurns) {
+              setConversationCompleted(true);
+              setConversationSummary({
+                score: 0,
+                feedback: 'Conversation completed. Unable to evaluate due to network error. Please try again later.',
+                success: false
+              });
+              setToast({ 
+                message: 'Network error during evaluation. Conversation ended.', 
+                type: 'warning' 
+              });
+            }
+          }
+        }
+      }
+      
       if (stats) {
         setStats(prev =>
           prev
@@ -1261,164 +1843,181 @@ export default function GameApp() {
 
   // Start screen - shown before the game begins
   if (!hasStarted) {
+    // Unified card data - combining mode and story selection
+    const allCards = [
+      // Free Exploration
+      {
+        id: 'exploration',
+        type: 'exploration' as const,
+        title: 'Free Exploration',
+        subtitle: 'LA Hollywood',
+        icon: Globe,
+        gradient: 'from-blue-600/90 via-cyan-600/90 to-teal-600/90',
+        bgImage: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80',
+      },
+      // London Journey Story
+      {
+        id: 'london-journey',
+        type: 'story' as const,
+        storyId: 'london-journey' as StoryId,
+        title: 'London Journey',
+        subtitle: STORIES['london-journey'].description,
+        icon: '🇬🇧',
+        gradient: 'from-indigo-600/90 via-purple-600/90 to-pink-600/90',
+        bgImage: STORIES['london-journey'].thumbnail,
+      },
+      // Friends Story
+      {
+        id: 'friends-s01e01',
+        type: 'story' as const,
+        storyId: 'friends-s01e01' as StoryId,
+        title: 'Friends: The One Where It All Began',
+        subtitle: STORIES['friends-s01e01'].description,
+        icon: '☕',
+        gradient: 'from-amber-600/90 via-orange-600/90 to-red-600/90',
+        bgImage: STORIES['friends-s01e01'].thumbnail,
+      },
+    ];
+
     return (
-      <div className="absolute inset-0 z-[200] bg-gradient-warm-hero flex flex-col items-center justify-center p-6 sm:p-8 text-white overflow-hidden">
-        {/* Background decorations - warm tones */}
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-300/20 blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-orange-300/20 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '1s' }} />
-        
+      <div className="absolute inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 sm:p-8 text-white overflow-hidden">
         {/* Main content */}
-        <div className="relative z-10 flex flex-col items-center max-w-md w-full text-center animate-in fade-in zoom-in duration-500">
-          {/* App icon - warm styling */}
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center mb-6 sm:mb-8 shadow-warm border border-white/20 transition-transform hover:scale-105">
-            <Footprints className="w-10 h-10 sm:w-12 sm:h-12 text-orange-100" />
-          </div>
-          
-          {/* App name and tagline */}
-          <h1 className="text-4xl sm:text-5xl font-black mb-3 sm:mb-4 tracking-tight drop-shadow-lg">
-            StepTrek
-          </h1>
-          <p className="text-orange-50/90 text-base sm:text-lg mb-6 sm:mb-8 leading-relaxed font-medium">
-            Language mastery at every step
-          </p>
-
-          {/* Mode Selection - Warm styling */}
-          {gameMode === null ? (
-            <div className="w-full flex flex-col gap-3 sm:gap-4 mb-6 animate-in slide-in-from-bottom-4 duration-500">
-              <h2 className="text-lg sm:text-xl font-bold mb-2 text-orange-50">Choose Your Adventure</h2>
-              
-              {/* Story Mode Button - Warm theme */}
-              <button
-                onClick={() => {
-                  setGameMode('story');
-                  setExplorationInitialized(false);
-                }}
-                className="w-full bg-white/15 backdrop-blur-xl text-white py-4 px-6 rounded-warm-2xl font-semibold text-base shadow-warm-md hover:bg-white/25 hover:shadow-warm-lg active:scale-[0.98] transition-all flex items-center justify-between gap-3 border border-white/30 group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/15 rounded-warm-xl group-hover:bg-white/25 transition-all duration-200">
-                    <BookOpen className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <div className="font-bold">Story Mode</div>
-                    <div className="text-xs text-orange-100/70 font-normal">Guided Journey</div>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
-              </button>
-
-              {/* Exploration Mode Button - Warm theme */}
-              <button
-                onClick={() => {
-                  setGameMode('exploration');
-                }}
-                className="w-full bg-white/15 backdrop-blur-xl text-white py-4 px-6 rounded-warm-2xl font-semibold text-base shadow-warm-md hover:bg-white/25 hover:shadow-warm-lg active:scale-[0.98] transition-all flex items-center justify-between gap-3 border border-white/30 group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white/15 rounded-warm-xl group-hover:bg-white/25 transition-all duration-200">
-                    <Globe className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <div className="font-bold">Free Exploration</div>
-                    <div className="text-xs text-orange-100/70 font-normal">LA Hollywood</div>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
-              </button>
+        <div className="relative z-10 flex flex-col items-center w-full max-w-6xl">
+          {/* App icon and title */}
+          <div className="text-center mb-8 sm:mb-12">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-white/10 backdrop-blur-xl rounded-xl flex items-center justify-center mb-3 mx-auto border border-white/20">
+              <Footprints className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
             </div>
-          ) : gameMode === 'story' && selectedStory === null ? (
-            <div className="w-full flex flex-col gap-4 mb-6 animate-in slide-in-from-right-4 duration-500">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg sm:text-xl font-bold">Select a Story</h2>
-                <button
-                  onClick={() => {
-                    setGameMode(null);
-                    setSelectedStory(null);
-                    setExplorationInitialized(false);
-                  }}
-                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-                  aria-label="Go back"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              </div>
+            <h1 className="text-2xl sm:text-3xl font-black mb-1.5 tracking-tight">
+              StepTrek
+            </h1>
+            <p className="text-gray-500 text-xs sm:text-sm">
+              Language mastery at every step
+            </p>
+          </div>
+
+          {/* Unified Card Selection - Apple TV Style */}
+          <div 
+            className="w-full relative h-[500px] sm:h-[600px] flex items-center justify-center overflow-hidden"
+            onTouchStart={(e) => setTouchStartX(e.touches[0].clientX)}
+            onTouchMove={(e) => setTouchEndX(e.touches[0].clientX)}
+            onTouchEnd={() => {
+              if (!touchStartX || !touchEndX) return;
+              const distance = touchStartX - touchEndX;
+              const isLeftSwipe = distance > 50;
+              const isRightSwipe = distance < -50;
               
-              {/* Story Cards */}
-              <div className="flex flex-col gap-3">
-                {Object.values(STORIES).map((story, index) => (
-                  <button
-                    key={story.id}
-                    onClick={() => setSelectedStory(story.id)}
-                    className="w-full bg-white/10 backdrop-blur-xl text-white p-4 sm:p-6 rounded-2xl font-semibold text-left shadow-lg hover:bg-white/20 hover:shadow-xl active:scale-95 transition-all flex items-start gap-4 border border-white/20 group animate-in slide-in-from-bottom-4"
-                    style={{ animationDelay: `${index * 100}ms` }}
+              if (isLeftSwipe && selectedCardIndex < allCards.length - 1) {
+                setSelectedCardIndex(selectedCardIndex + 1);
+              }
+              if (isRightSwipe && selectedCardIndex > 0) {
+                setSelectedCardIndex(selectedCardIndex - 1);
+              }
+              
+              setTouchStartX(null);
+              setTouchEndX(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft' && selectedCardIndex > 0) {
+                setSelectedCardIndex(selectedCardIndex - 1);
+              } else if (e.key === 'ArrowRight' && selectedCardIndex < allCards.length - 1) {
+                setSelectedCardIndex(selectedCardIndex + 1);
+              }
+            }}
+            tabIndex={0}
+          >
+            {/* Card Container */}
+            <div className="relative w-full h-full flex items-center justify-center">
+              {allCards.map((card, index) => {
+                const isActive = selectedCardIndex === index;
+                const offset = index - selectedCardIndex;
+                
+                // Calculate position and scale based on offset (Apple TV style)
+                // Active card: scale 1, centered
+                // Adjacent cards: scale 0.85, offset left/right
+                const translateX = offset * 180; // 180px spacing between cards
+                const scale = isActive ? 1 : 0.85;
+                const zIndex = isActive ? 20 : 10 - Math.abs(offset);
+                const opacity = Math.abs(offset) > 1 ? 0.4 : (isActive ? 1 : 0.7);
+                
+                return (
+                  <div
+                    key={card.id}
+                    onClick={() => {
+                      // Only select card, don't start game
+                      setSelectedCardIndex(index);
+                    }}
+                    className="absolute left-1/2 top-1/2 w-[95%] sm:w-[90%] max-w-[1400px] aspect-video cursor-pointer duration-500 ease-in-out rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden transition-all select-none"
+                    style={{
+                      transform: `translate(calc(-50% + ${translateX}px), -50%) scale(${scale})`,
+                      zIndex,
+                      opacity,
+                    }}
                   >
-                    <div className="text-3xl sm:text-4xl group-hover:scale-110 transition-transform">{story.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-base mb-1.5">{story.name}</div>
-                      <div className="text-xs text-orange-100/80 mb-3 leading-relaxed">{story.description}</div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="px-2 py-1 bg-white/10 rounded-full border border-white/20">
-                          {story.totalCheckpoints} checkpoints
-                        </span>
-                        <span className="px-2 py-1 bg-white/10 rounded-full border border-white/20">
-                          {story.estimatedDuration}
-                        </span>
-                        <span className={`px-2 py-1 rounded-full border ${
-                          story.difficulty === 'basic' ? 'bg-green-500/20 border-green-400/30 text-green-200' :
-                          story.difficulty === 'beginner' ? 'bg-orange-500/20 border-blue-400/30 text-blue-200' :
-                          story.difficulty === 'intermediate' ? 'bg-yellow-500/20 border-yellow-400/30 text-yellow-200' :
-                          'bg-red-500/20 border-red-400/30 text-red-200'
-                        }`}>
-                          {story.difficulty}
-                        </span>
+                    {/* Card Background with Image - Apple TV Style */}
+                    <div className="relative w-full h-full">
+                      {/* Background Image - Full Screen Style */}
+                      <img
+                        src={card.bgImage}
+                        alt={card.title}
+                        className="absolute inset-0 w-full h-full object-cover transition-all duration-700"
+                        style={{
+                          transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                        }}
+                      />
+                      {/* Gradient Overlay - Subtle */}
+                      <div className={`absolute inset-0 bg-gradient-to-br ${card.gradient} opacity-60`} />
+                      {/* Dark overlay for better text contrast */}
+                      <div className="absolute inset-0 bg-black/30" />
+                      
+                      {/* Card Content - Apple TV Style (Bottom Aligned) */}
+                      <div className="relative h-full w-full flex flex-col justify-end p-6 sm:p-8 lg:p-12 text-white">
+                        {/* Bottom Content - Apple TV Style */}
+                        <div className="space-y-3 sm:space-y-4">
+                          <h3 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-bold drop-shadow-2xl leading-tight">
+                            {card.title}
+                          </h3>
+                          <p className="text-xs sm:text-sm lg:text-base text-white/90 max-w-xl lg:max-w-2xl leading-relaxed drop-shadow-lg line-clamp-2 sm:line-clamp-3">
+                            {card.subtitle}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                    <ArrowUpRight className="w-5 h-5 opacity-60 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all flex-shrink-0 mt-1" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="w-full flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-500">
-              {gameMode === 'story' && selectedStory && (
-                <div className="mb-2 p-4 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 shadow-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="text-3xl">{STORIES[selectedStory].icon}</div>
-                    <div className="flex-1">
-                      <div className="font-bold text-base">{STORIES[selectedStory].name}</div>
-                      <div className="text-xs text-orange-100/80 mt-0.5">Story Mode</div>
-                    </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setGameMode(null);
-                      setSelectedStory(null);
-                      setExplorationInitialized(false);
-                    }}
-                    className="text-xs text-orange-100/80 hover:text-white transition-colors underline"
-                  >
-                    Change story
-                  </button>
-                </div>
-              )}
-              
-              {/* Start button */}
-              <button
-                onClick={handleStartGame}
-                className="w-full bg-white text-primary-hover py-5 px-8 rounded-2xl font-black text-lg shadow-2xl hover:scale-[1.02] hover:shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-3 group"
-              >
-                <Activity className="w-6 h-6 group-hover:animate-pulse" />
-                {gameMode === 'story' ? 'Start Story' : 'Start Exploring'}
-              </button>
-              
-              {/* Info text */}
-              <p className="text-blue-100/60 text-xs mt-2 px-4 leading-relaxed">
-                {gameMode === 'story' 
-                  ? 'Follow a guided story with linear progression through immersive dialogues'
-                  : 'Walk in the real world to earn steps and learn English through immersive conversations'}
-              </p>
+                );
+              })}
             </div>
-          )}
+            
+            {/* Navigation Dots */}
+            <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 flex gap-2">
+              {allCards.map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedCardIndex(index)}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    selectedCardIndex === index 
+                      ? 'bg-white w-5' 
+                      : 'bg-white/30 hover:bg-white/50 w-1.5'
+                  }`}
+                  aria-label={`Select card ${index + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+          
+          {/* Start Button - Below Cards (Apple TV Style) */}
+          <div className="mt-6 sm:mt-8 w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <button
+              onClick={() => {
+                const card = allCards[selectedCardIndex];
+                handleCardSelect(card);
+              }}
+              className="w-full bg-white text-black py-3.5 sm:py-4 px-8 rounded-full font-semibold text-base sm:text-lg shadow-2xl hover:bg-gray-50 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
+            >
+              <Activity className="w-5 h-5 sm:w-6 sm:h-6 group-hover:animate-pulse" />
+              <span>{allCards[selectedCardIndex].type === 'exploration' ? 'Start Exploring' : 'Start Story'}</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1764,9 +2363,524 @@ export default function GameApp() {
         </div>
       )}
 
+      {/* ⭐ New Structured Learning Flow UI */}
+      {showLearningFlow && currentLearningCheckpoint && learningProgress && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/10 backdrop-blur-sm p-6 animate-in fade-in">
+          <div className="bg-white w-full max-w-[420px] h-[calc(100%-48px)] rounded-2xl overflow-hidden flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+            {/* Header with Progress */}
+            <div className="bg-[#f3f3f3] p-5 border-b border-gray-200/50">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-gray-200/50">
+                    <Sparkles className="w-5 h-5 text-gray-700" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900 leading-tight">Learning Time</h2>
+                    <p className="text-xs text-gray-500 leading-tight mt-0.5">{currentLearningCheckpoint.name}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowLearningFlow(false);
+                    setCurrentLearningCheckpoint(null);
+                  }}
+                  className="w-8 h-8 rounded-full bg-white hover:bg-gray-50 flex items-center justify-center transition-colors border border-gray-200/50 shadow-sm"
+                >
+                  <X className="w-4 h-4 text-gray-600" />
+                </button>
+              </div>
+
+              {/* Unified Progress Indicator - Stage dots only */}
+              <div className="flex gap-1">
+                {(['welcome', 'vocabulary', 'listening', 'pronunciation', 'pattern', 'guided', 'free'] as const).map((stage) => {
+                  const stageKey = stage as keyof typeof learningProgress.stageProgress;
+                  const isCompleted = learningProgress.stageProgress[stageKey] === true || learningProgress.stageProgress[stageKey] === 100;
+                  return (
+                    <div
+                      key={stage}
+                      className={`flex-1 h-1 rounded-full transition-all ${
+                        learningProgress.currentStage === stage
+                          ? 'bg-gray-700'
+                          : isCompleted
+                          ? 'bg-gray-400'
+                          : 'bg-gray-200'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto bg-white">
+              <div className="p-5 space-y-4">
+                {isGeneratingLearningContent ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-gray-600" />
+                    <p className="text-gray-700 font-medium text-sm">Preparing your lesson...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Stage 1: Welcome & Context */}
+                    {learningProgress.currentStage === 'welcome' && (
+                      <div className="space-y-4">
+                        <div className="text-center">
+                          <div className="w-20 h-20 mx-auto mb-3 rounded-xl overflow-hidden border border-gray-200/50 shadow-sm">
+                            <img
+                              src={currentLearningCheckpoint.image}
+                              alt={currentLearningCheckpoint.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <h3 className="text-base font-semibold text-gray-900 mb-1 leading-tight">
+                            {currentLearningCheckpoint.name}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-3 leading-relaxed">{currentLearningCheckpoint.scenario}</p>
+                        </div>
+
+                        {currentLearningCheckpoint.dialogPrompt && (
+                          <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50">
+                            <p className="text-sm text-gray-600 leading-relaxed">
+                              {currentLearningCheckpoint.dialogPrompt}
+                            </p>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setLearningProgress(prev => prev ? {
+                              ...prev,
+                              currentStage: 'vocabulary',
+                              stageProgress: { ...prev.stageProgress, welcome: true },
+                              overallScore: 14
+                            } : null);
+                            setCurrentExerciseIndex(0);
+                          }}
+                          className="w-full bg-gray-900 text-white py-3 rounded-xl font-medium text-sm shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all border border-gray-900"
+                        >
+                          Start Learning
+                        </button>
+                      </div>
+                    )}
+
+                  {/* Stage 2: Vocabulary Preview */}
+                  {learningProgress.currentStage === 'vocabulary' && (
+                    <div className="space-y-4">
+                      {vocabularyItems[currentExerciseIndex] && (
+                        <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50 space-y-4">
+                          <div className="text-center">
+                            <h4 className="text-2xl font-bold text-gray-900 mb-2 leading-tight">
+                              {vocabularyItems[currentExerciseIndex].word}
+                            </h4>
+                            {vocabularyItems[currentExerciseIndex].phonetic && (
+                              <p className="text-sm text-gray-500 mb-2">
+                                {vocabularyItems[currentExerciseIndex].phonetic}
+                              </p>
+                            )}
+                            <p className="text-base text-gray-700 font-medium mb-3">
+                              {vocabularyItems[currentExerciseIndex].translation}
+                            </p>
+                            <button
+                              onClick={() => speakText(vocabularyItems[currentExerciseIndex].word)}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg shadow-sm hover:shadow border border-gray-200/50 transition-all text-sm"
+                            >
+                              <Volume2 className="w-4 h-4 text-gray-600" />
+                              <span className="font-medium text-gray-700">Listen</span>
+                            </button>
+                          </div>
+
+                          <div className="bg-white p-3 rounded-lg border border-gray-200/50">
+                            <p className="text-xs font-medium text-gray-500 mb-1.5">Example:</p>
+                            <p className="text-sm text-gray-900 mb-1.5 leading-relaxed">
+                              "{vocabularyItems[currentExerciseIndex].exampleSentence}"
+                            </p>
+                            <p className="text-xs text-gray-600 leading-relaxed">
+                              {vocabularyItems[currentExerciseIndex].exampleTranslation}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>{currentExerciseIndex + 1} / {vocabularyItems.length}</span>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {currentExerciseIndex < vocabularyItems.length - 1 ? (
+                          <button
+                            onClick={() => setCurrentExerciseIndex(prev => prev + 1)}
+                            className="flex-1 bg-gray-900 text-white py-3 rounded-xl font-medium text-sm shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all border border-gray-900"
+                          >
+                            Next
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setLearningProgress(prev => prev ? {
+                                ...prev,
+                                currentStage: 'listening',
+                                stageProgress: { ...prev.stageProgress, vocabulary: 100 },
+                                overallScore: 28
+                              } : null);
+                              setCurrentExerciseIndex(0);
+                            }}
+                            className="flex-1 bg-gray-900 text-white py-3 rounded-xl font-medium text-sm shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all border border-gray-900"
+                          >
+                            Continue
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stage 3: Listening Practice */}
+                  {learningProgress.currentStage === 'listening' && listeningExercises.length > 0 && (
+                    <div className="space-y-4">
+                      {listeningExercises[currentExerciseIndex] && (
+                        <div className="space-y-3">
+                          <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50">
+                            <button
+                              onClick={() => speakText(listeningExercises[currentExerciseIndex].audioText)}
+                              className="w-full flex items-center justify-center gap-2 p-3 bg-white rounded-lg shadow-sm hover:shadow border border-gray-200/50 transition-all text-sm"
+                            >
+                              <Volume2 className="w-5 h-5 text-gray-600" />
+                              <span className="font-medium text-gray-700">Play Audio</span>
+                            </button>
+                            <p className="text-center text-sm text-gray-600 mt-3 leading-relaxed">
+                              {listeningExercises[currentExerciseIndex].question}
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            {listeningExercises[currentExerciseIndex].options.map((option, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => {
+                                  const correct = option === listeningExercises[currentExerciseIndex].correctAnswer;
+                                  if (correct) {
+                                    setToast({ message: 'Correct! 🎉', type: 'success' });
+                                    setTimeout(() => {
+                                      if (currentExerciseIndex < listeningExercises.length - 1) {
+                                        setCurrentExerciseIndex(prev => prev + 1);
+                                      } else {
+                                        setLearningProgress(prev => prev ? {
+                                          ...prev,
+                                          currentStage: 'pronunciation',
+                                          stageProgress: { ...prev.stageProgress, listening: 100 },
+                                          overallScore: 42
+                                        } : null);
+                                        setCurrentExerciseIndex(0);
+                                      }
+                                    }, 1000);
+                                  } else {
+                                    setToast({ message: 'Try again!', type: 'error' });
+                                  }
+                                }}
+                                className="w-full text-left p-3 bg-white border border-gray-200/50 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-sm shadow-sm"
+                              >
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-center text-xs text-gray-500">
+                        {currentExerciseIndex + 1} / {listeningExercises.length}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stage 4: Pronunciation Practice */}
+                  {learningProgress.currentStage === 'pronunciation' && pronunciationExercises.length > 0 && (
+                    <div className="space-y-4">
+                      {pronunciationExercises[currentExerciseIndex] && (
+                        <div className="space-y-3">
+                          <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50 text-center space-y-2">
+                            <p className="text-lg font-semibold text-gray-900 leading-tight">
+                              "{pronunciationExercises[currentExerciseIndex].targetSentence}"
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {pronunciationExercises[currentExerciseIndex].translation}
+                            </p>
+                            <button
+                              onClick={() => speakText(pronunciationExercises[currentExerciseIndex].targetSentence)}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg shadow-sm hover:shadow border border-gray-200/50 transition-all text-sm"
+                            >
+                              <Volume2 className="w-4 h-4 text-gray-600" />
+                              <span className="font-medium text-gray-700">Listen</span>
+                            </button>
+                          </div>
+
+                          <div className="bg-white p-4 rounded-xl border border-dashed border-gray-300 text-center">
+                            <button
+                              onClick={handleVoiceToggle}
+                              disabled={!isVoiceSupported}
+                              className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center transition-all border ${
+                                isListening
+                                  ? 'bg-red-500 text-white animate-pulse border-red-600'
+                                  : 'bg-gray-700 text-white hover:bg-gray-800 border-gray-800'
+                              }`}
+                            >
+                              <Mic className="w-8 h-8" />
+                            </button>
+                            <p className="mt-3 text-sm text-gray-600">
+                              {isListening ? 'Listening... Speak now!' : 'Tap to record'}
+                            </p>
+                            {interimVoiceText && (
+                              <p className="mt-2 text-xs text-gray-500 italic">"{interimVoiceText}"</p>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              if (currentExerciseIndex < pronunciationExercises.length - 1) {
+                                setCurrentExerciseIndex(prev => prev + 1);
+                              } else {
+                                setLearningProgress(prev => prev ? {
+                                  ...prev,
+                                  currentStage: 'pattern',
+                                  stageProgress: { ...prev.stageProgress, pronunciation: 100 },
+                                  overallScore: 56
+                                } : null);
+                                setCurrentExerciseIndex(0);
+                              }
+                            }}
+                            className="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-medium text-sm hover:bg-gray-300 transition-all border border-gray-300"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="text-center text-xs text-gray-500">
+                        {currentExerciseIndex + 1} / {pronunciationExercises.length}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stage 5: Pattern Practice */}
+                  {learningProgress.currentStage === 'pattern' && patternExercises.length > 0 && (
+                    <div className="space-y-4">
+                      {patternExercises[currentExerciseIndex] && (
+                        <div className="space-y-3">
+                          <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50">
+                            <p className="text-center text-base font-medium text-gray-900 mb-2 leading-relaxed">
+                              {patternExercises[currentExerciseIndex].question}
+                            </p>
+                            {patternExercises[currentExerciseIndex].hint && (
+                              <p className="text-center text-xs text-gray-600 mt-2">
+                                Hint: {patternExercises[currentExerciseIndex].hint}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Support multiple types */}
+                          {patternExercises[currentExerciseIndex].type === 'multiple-choice' && patternExercises[currentExerciseIndex].options ? (
+                            <div className="space-y-2">
+                              {patternExercises[currentExerciseIndex].options.map((option, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={() => {
+                                    const userAnswer = option.trim().toLowerCase().replace(/\s+/g, ' ');
+                                    const correctAnswer = patternExercises[currentExerciseIndex].correctAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+                                    
+                                    // More flexible matching for multiple choice:
+                                    // 1. Exact match
+                                    // 2. User answer contains the key part of correct answer
+                                    // 3. Correct answer contains the user answer (for shorter options)
+                                    const isExactMatch = userAnswer === correctAnswer;
+                                    const userContainsCorrect = userAnswer.includes(correctAnswer) && correctAnswer.length >= 3;
+                                    const correctContainsUser = correctAnswer.includes(userAnswer) && userAnswer.length >= 3;
+                                    
+                                    // Also check if the option text matches the correct answer when normalized
+                                    const normalizedUser = userAnswer.replace(/[.,!?;:]/g, '').trim();
+                                    const normalizedCorrect = correctAnswer.replace(/[.,!?;:]/g, '').trim();
+                                    const normalizedMatch = normalizedUser === normalizedCorrect;
+                                    
+                                    const correct = isExactMatch || userContainsCorrect || correctContainsUser || normalizedMatch;
+                                    
+                                    if (correct) {
+                                      setToast({ message: 'Perfect! 🎉', type: 'success' });
+                                      setTimeout(() => {
+                                        if (currentExerciseIndex < patternExercises.length - 1) {
+                                          setCurrentExerciseIndex(prev => prev + 1);
+                                        } else {
+                                          setLearningProgress(prev => prev ? {
+                                            ...prev,
+                                            currentStage: 'guided',
+                                            stageProgress: { ...prev.stageProgress, pattern: 100 },
+                                            overallScore: 70
+                                          } : null);
+                                          setCurrentExerciseIndex(0);
+                                        }
+                                      }, 1000);
+                                    } else {
+                                      setToast({ message: `Try again! Correct answer: ${patternExercises[currentExerciseIndex].correctAnswer}`, type: 'error' });
+                                    }
+                                  }}
+                                  className="w-full text-left p-3 bg-white border border-gray-200/50 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-sm shadow-sm"
+                                >
+                                  {option}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="Type your answer..."
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:border-gray-700 focus:outline-none text-sm bg-white shadow-sm"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const userAnswer = e.currentTarget.value.trim().toLowerCase().replace(/\s+/g, ' ');
+                                  const correctAnswer = patternExercises[currentExerciseIndex].correctAnswer.trim().toLowerCase().replace(/\s+/g, ' ');
+                                  
+                                  // More flexible matching: exact match or contains the key answer
+                                  const isExactMatch = userAnswer === correctAnswer;
+                                  const isPartialMatch = correctAnswer.includes(userAnswer) && userAnswer.length >= correctAnswer.length * 0.7;
+                                  const correct = isExactMatch || isPartialMatch;
+                                  
+                                  if (correct) {
+                                    setToast({ message: 'Perfect! 🎉', type: 'success' });
+                                    e.currentTarget.value = '';
+                                    setTimeout(() => {
+                                      if (currentExerciseIndex < patternExercises.length - 1) {
+                                        setCurrentExerciseIndex(prev => prev + 1);
+                                      } else {
+                                        setLearningProgress(prev => prev ? {
+                                          ...prev,
+                                          currentStage: 'guided',
+                                          stageProgress: { ...prev.stageProgress, pattern: 100 },
+                                          overallScore: 70
+                                        } : null);
+                                        setCurrentExerciseIndex(0);
+                                      }
+                                    }, 1000);
+                                  } else {
+                                    setToast({ message: `Correct answer: ${patternExercises[currentExerciseIndex].correctAnswer}`, type: 'error' });
+                                  }
+                                }
+                              }}
+                            />
+                          )}
+
+                          {patternExercises[currentExerciseIndex].type !== 'multiple-choice' && (
+                            <p className="text-center text-xs text-gray-500">
+                              Press Enter to submit
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="text-center text-xs text-gray-500">
+                        {currentExerciseIndex + 1} / {patternExercises.length}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stage 6: Guided Conversation */}
+                  {learningProgress.currentStage === 'guided' && (
+                    <div className="space-y-4">
+                      <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50">
+                        <p className="text-center text-sm text-gray-700 mb-3 leading-relaxed">
+                          Now you'll have a short practice conversation. Use what you've learned!
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setLearningProgress(prev => prev ? {
+                            ...prev,
+                            currentStage: 'free',
+                            stageProgress: { ...prev.stageProgress, guided: 100 },
+                            overallScore: 85
+                          } : null);
+                        }}
+                        className="w-full bg-gray-900 text-white py-3 rounded-xl font-medium text-sm shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all border border-gray-900"
+                      >
+                        Start Guided Chat
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Stage 7: Free Conversation */}
+                  {learningProgress.currentStage === 'free' && (
+                    <div className="space-y-4">
+                      <div className="bg-[#f3f3f3] p-4 rounded-xl border border-gray-200/50 text-center">
+                        <p className="text-sm text-gray-700 font-medium mb-2 leading-relaxed">
+                          Great job! You've completed the preparation.
+                        </p>
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                          Now it's time for a real conversation with {currentLearningCheckpoint.npcRole}.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setLearningProgress(prev => prev ? {
+                            ...prev,
+                            stageProgress: { ...prev.stageProgress, free: 100 },
+                            overallScore: 100,
+                            completedAt: Date.now(),
+                            earnedSteps: 50
+                          } : null);
+                          // Add steps reward
+                          handleAddSteps(50);
+                          // Transition to free conversation
+                          startFreeConversation();
+                        }}
+                        className="w-full bg-gray-900 text-white py-3 rounded-xl font-medium text-sm shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all border border-gray-900"
+                      >
+                        Start Conversation (+50 Steps)
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeDialog && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
           <div className="bg-[#fcfbf9]/90 w-full max-w-md h-[85vh] rounded-[32px] shadow-2xl overflow-hidden flex flex-col relative backdrop-blur-2xl border border-white/50">
+            {/* Conversation Summary (for free conversation from learning flow) */}
+            {conversationSummary && conversationCompleted && (
+              <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in">
+                <div
+                  className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 ${
+                    conversationSummary.success ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'
+                  }`}
+                >
+                  {conversationSummary.success ? <Award className="w-12 h-12" /> : <Target className="w-12 h-12" />}
+                </div>
+                <h2 className="text-3xl font-bold mb-2 text-gray-800">
+                  {conversationSummary.success ? 'Goal Achieved! 🎉' : 'Conversation Complete'}
+                </h2>
+                <div className="mb-4">
+                  <div className="text-2xl font-bold text-gray-700 mb-1">
+                    Score: {conversationSummary.score || 0}/100
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Turns: {conversationTurns} / {conversationMaxTurns}
+                  </p>
+                </div>
+                <p className="text-gray-600 mb-6 leading-relaxed">{conversationSummary.feedback}</p>
+                <button
+                  onClick={() => {
+                    setConversationSummary(null);
+                    setConversationCompleted(false);
+                    handleCloseDialog();
+                  }}
+                  className="px-8 py-3 bg-gray-900 text-white rounded-full font-bold shadow-lg hover:scale-105 transition-transform"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+            
             {challengeResult && (
               <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in">
                 <div
@@ -1789,23 +2903,25 @@ export default function GameApp() {
               </div>
             )}
             <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-start bg-gradient-to-b from-[#fcfbf9] via-[#fcfbf9]/95 to-transparent pb-8 pointer-events-none">
-              <div className="bg-white/90 backdrop-blur-lg rounded-full p-2.5 pr-5 flex items-center gap-3.5 shadow-lg border border-black/[0.08] pointer-events-auto transition-all hover:shadow-xl hover:border-black/[0.12] group">
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 transition-transform group-hover:scale-105">
-                  <img src={activeDialog.checkpoint.image} className="w-full h-full object-cover" alt="Avatar" />
-                </div>
-                <div className="flex flex-col justify-center gap-1 min-w-0">
-                  <span className="font-bold text-base text-gray-900 leading-tight truncate">
-                    {(() => {
-                      const roleText = activeDialog.checkpoint.npcRole;
-                      const match = roleText.match(/^(.+?)\s*\((.+?)\)$/);
-                      return match ? match[1].trim() : roleText;
-                    })()}
-                  </span>
-                  <div className="flex items-center gap-1.5 text-gray-500">
-                    <MapPinned className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="text-xs font-medium leading-tight truncate">
-                      {activeDialog.checkpoint.name}
+              <div className="pointer-events-auto">
+                <div className="bg-white/90 backdrop-blur-lg rounded-full p-2.5 pr-5 flex items-center gap-3.5 shadow-lg border border-black/[0.08] transition-all hover:shadow-xl hover:border-black/[0.12] group">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 transition-transform group-hover:scale-105">
+                    <img src={activeDialog.checkpoint.image} className="w-full h-full object-cover" alt="Avatar" />
+                  </div>
+                  <div className="flex flex-col justify-center gap-1 min-w-0">
+                    <span className="font-bold text-base text-gray-900 leading-tight truncate">
+                      {(() => {
+                        const roleText = activeDialog.checkpoint.npcRole;
+                        const match = roleText.match(/^(.+?)\s*\((.+?)\)$/);
+                        return match ? match[1].trim() : roleText;
+                      })()}
                     </span>
+                    <div className="flex items-center gap-1.5 text-gray-500">
+                      <MapPinned className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="text-xs font-medium leading-tight truncate">
+                        {activeDialog.checkpoint.name}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1828,8 +2944,34 @@ export default function GameApp() {
             </div>
             <div
               ref={chatContainerRef}
-              className="flex-1 overflow-y-auto p-5 pt-32 pb-32 space-y-6 scrollbar-hide"
+              className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-hide"
+              style={{
+                paddingTop: conversationGoal && currentLearningCheckpoint && activeDialog.checkpoint.id === currentLearningCheckpoint.id 
+                  ? '120px' 
+                  : '60px',
+                paddingBottom: '120px'
+              }}
             >
+              {/* Conversation Goal and Progress (for free conversation from learning flow) - Inside chat area */}
+              {conversationGoal && currentLearningCheckpoint && activeDialog.checkpoint.id === currentLearningCheckpoint.id && (
+                <div className="bg-white/90 backdrop-blur-lg rounded-xl p-3 shadow-lg border border-black/[0.08] mb-4 sticky top-0 z-10">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                    <p className="text-xs font-medium text-gray-700 leading-tight line-clamp-2">
+                      {conversationGoal}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <span>Turn {conversationTurns} / {conversationMaxTurns}</span>
+                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gray-700 rounded-full transition-all duration-300"
+                        style={{ width: `${(conversationTurns / conversationMaxTurns) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               {activeDialog.messages.map(msg => (
                 <div
                   key={msg.id}
@@ -2051,15 +3193,22 @@ export default function GameApp() {
                 activeDialog.messages[activeDialog.messages.length - 1]?.role === 'model' &&
                 activeDialog.messages[activeDialog.messages.length - 1]?.options && (
                   <div className="mb-1 flex gap-2 overflow-x-auto pb-2 scrollbar-hide mask-fade-right">
-                    {activeDialog.messages[activeDialog.messages.length - 1].options!.map((opt, i) => (
-                      <button
-                        key={i}
-                        onClick={() => sendMessageImpl(opt)}
-                        className="whitespace-nowrap text-xs font-medium bg-white/80 backdrop-blur-md text-gray-700 border border-gray-200/50 px-4 py-2 rounded-full hover:bg-white hover:shadow-md hover:scale-105 transition-all shadow-sm"
-                      >
-                        {opt}
-                      </button>
-                    ))}
+                    {activeDialog.messages[activeDialog.messages.length - 1].options!.map((opt, i) => {
+                      const isFreeConversation = currentLearningCheckpoint && activeDialog.checkpoint.id === currentLearningCheckpoint.id;
+                      const isDisabled = !!(isFreeConversation && conversationCompleted);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => sendMessageImpl(opt)}
+                          disabled={isDisabled}
+                          className={`whitespace-nowrap text-xs font-medium bg-white/80 backdrop-blur-md text-gray-700 border border-gray-200/50 px-4 py-2 rounded-full hover:bg-white hover:shadow-md hover:scale-105 transition-all shadow-sm ${
+                            isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               <div className={`bg-white p-1.5 rounded-[28px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] border flex items-center gap-2 relative transition-all ${
@@ -2079,22 +3228,63 @@ export default function GameApp() {
                 </button>
                 
                 <div className="flex-1 relative">
-                  <input
-                    className="w-full bg-transparent border-none focus:ring-0 text-base text-gray-800 placeholder-gray-400 font-medium p-2"
-                    placeholder={isListening ? 'Listening...' : 'Ask...'}
-                    value={inputText + interimVoiceText}
-                    onChange={e => {
-                      // ⭐ 只更新确认的文本部分
-                      const newValue = e.target.value;
-                      if (interimVoiceText && newValue.endsWith(interimVoiceText)) {
-                        setInputText(newValue.slice(0, -interimVoiceText.length));
-                      } else {
-                        setInputText(newValue);
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        // ⭐ 如果有临时文本，先确认
+                  {(() => {
+                    const isFreeConversation = currentLearningCheckpoint && activeDialog.checkpoint.id === currentLearningCheckpoint.id;
+                    const isDisabled = !!(isFreeConversation && conversationCompleted);
+                    return (
+                      <input
+                        className={`w-full bg-transparent border-none focus:ring-0 text-base text-gray-800 placeholder-gray-400 font-medium p-2 ${
+                          isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        placeholder={isDisabled ? 'Conversation completed' : (isListening ? 'Listening...' : 'Ask...')}
+                        value={inputText + interimVoiceText}
+                        onChange={e => {
+                          if (isDisabled) return;
+                          // ⭐ 只更新确认的文本部分
+                          const newValue = e.target.value;
+                          if (interimVoiceText && newValue.endsWith(interimVoiceText)) {
+                            setInputText(newValue.slice(0, -interimVoiceText.length));
+                          } else {
+                            setInputText(newValue);
+                          }
+                        }}
+                        onKeyDown={e => {
+                          if (isDisabled) return;
+                          if (e.key === 'Enter') {
+                            // ⭐ 如果有临时文本，先确认
+                            const fullText = (inputText + interimVoiceText).trim();
+                            if (fullText) {
+                              if (interimVoiceText) {
+                                setInputText(fullText);
+                                setInterimVoiceText('');
+                              }
+                              if (isListening) {
+                                stopVoiceRecording();
+                              }
+                              sendMessageImpl(fullText);
+                            }
+                          }
+                        }}
+                        disabled={isDisabled}
+                      />
+                    );
+                  })()}
+                  {/* ⭐ 临时文本指示 - 显示正在识别中 */}
+                  {isListening && interimVoiceText && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-primary">
+                      <div className="w-1 h-1 bg-orange-500 rounded-full animate-pulse" />
+                    </div>
+                  )}
+                </div>
+                
+                {(() => {
+                  const isFreeConversation = currentLearningCheckpoint && activeDialog.checkpoint.id === currentLearningCheckpoint.id;
+                  const isDisabled = !!(isFreeConversation && conversationCompleted);
+                  return (
+                    <button
+                      onClick={() => {
+                        if (isDisabled) return;
+                        // ⭐ 如果有临时文本，先确认再发送
                         const fullText = (inputText + interimVoiceText).trim();
                         if (fullText) {
                           if (interimVoiceText) {
@@ -2106,41 +3296,20 @@ export default function GameApp() {
                           }
                           sendMessageImpl(fullText);
                         }
-                      }
-                    }}
-                  />
-                  {/* ⭐ 临时文本指示 - 显示正在识别中 */}
-                  {isListening && interimVoiceText && (
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-primary">
-                      <div className="w-1 h-1 bg-orange-500 rounded-full animate-pulse" />
-                    </div>
-                  )}
-                </div>
-                
-                <button
-                  onClick={() => {
-                    // ⭐ 如果有临时文本，先确认再发送
-                    const fullText = (inputText + interimVoiceText).trim();
-                    if (fullText) {
-                      if (interimVoiceText) {
-                        setInputText(fullText);
-                        setInterimVoiceText('');
-                      }
-                      if (isListening) {
-                        stopVoiceRecording();
-                      }
-                      sendMessageImpl(fullText);
-                    }
-                  }}
-                  disabled={!inputText.trim() && !interimVoiceText.trim()}
-                  className={`px-5 py-3 rounded-[22px] font-bold text-sm transition-all flex items-center gap-1 ${
-                    inputText.trim() || interimVoiceText.trim()
-                      ? 'bg-gray-900 text-white hover:bg-black hover:shadow-lg active:scale-95'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  Go 
-                </button>
+                      }}
+                      disabled={isDisabled || (!inputText.trim() && !interimVoiceText.trim())}
+                      className={`px-5 py-3 rounded-[22px] font-bold text-sm transition-all flex items-center gap-1 ${
+                        isDisabled
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : inputText.trim() || interimVoiceText.trim()
+                          ? 'bg-gray-900 text-white hover:bg-black hover:shadow-lg active:scale-95'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      Go 
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           </div>
