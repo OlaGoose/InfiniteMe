@@ -40,6 +40,7 @@ import {
   Activity,
   Loader2,
   MapPinned,
+  Youtube,
 } from 'lucide-react';
 import Map from './Map';
 import Joystick from './Joystick';
@@ -47,6 +48,7 @@ import Toast, { ToastType } from './Toast';
 import SelectionToolbar from './SelectionToolbar';
 import FlashcardDeck from './FlashcardDeck';
 import MediaIntro from './MediaIntro';
+import YouTubeLearning from './YouTubeLearning';
 import {
   LatLng,
   UserStats,
@@ -67,6 +69,7 @@ import {
   PatternPractice,
   ListeningExercise,
   PronunciationExercise,
+  CEFRLevel,
 } from '@/types';
 import { calculateNextReview, getDueCards, getStudyStats } from '@/utils/anki';
 import {
@@ -168,6 +171,7 @@ export default function GameApp() {
   const [conversationMaxTurns, setConversationMaxTurns] = useState(10);
   const [conversationCompleted, setConversationCompleted] = useState(false);
   const [conversationSummary, setConversationSummary] = useState<{ score: number; feedback: string; success: boolean } | null>(null);
+  const [youtubeLearningCheckpoint, setYoutubeLearningCheckpoint] = useState<Checkpoint | null>(null);
 
   const activeDialogRef = useRef(activeDialog);
   useEffect(() => {
@@ -1399,18 +1403,29 @@ Ensure all content is appropriate for ${checkpoint.difficulty} level and directl
   const handleCheckpointClick = async (cp: Checkpoint) => {
     if (!stats) return;
     // Dynamically import Leaflet only on client side
-    const leafletModule = await import('leaflet');
-    const L = leafletModule.default || leafletModule;
-    const dist = L.latLng(stats.currentLocation).distanceTo(L.latLng(cp.location));
-    if (dist <= INTERACTION_RADIUS_METERS) {
+    try {
+      const leafletModule = await import('leaflet');
+      const L = leafletModule.default || leafletModule;
+      const dist = L.latLng(stats.currentLocation).distanceTo(L.latLng(cp.location));
+      if (dist <= INTERACTION_RADIUS_METERS) {
+      // Handle YouTube learning checkpoints
+      if (cp.type === 'youtube-learning') {
+        setYoutubeLearningCheckpoint(cp);
+        return;
+      }
+      
       // If checkpoint has media introduction, show it first
       if (cp.mediaIntro) {
         setShowMediaIntro(cp);
       } else {
         openDialog(cp);
       }
-    } else {
-      setToast({ message: `${cp.name} is too far.`, type: 'warning' });
+      } else {
+        setToast({ message: `${cp.name} is too far.`, type: 'warning' });
+      }
+    } catch (error) {
+      console.error('Failed to load Leaflet:', error);
+      setToast({ message: 'Map feature is loading, please try again.', type: 'warning' });
     }
   };
 
@@ -2320,6 +2335,31 @@ Ensure all content is appropriate for ${checkpoint.difficulty} level and directl
           </div>
 
           <div className="flex-1 flex flex-col gap-3 items-end pointer-events-auto">
+            {/* YouTube Learning Button */}
+            <button
+              onClick={() => {
+                // Create a temporary YouTube learning checkpoint
+                const youtubeCheckpoint: Checkpoint = {
+                  id: 'youtube-learning-quick',
+                  name: 'YouTube English Learning',
+                  type: 'youtube-learning',
+                  location: stats?.currentLocation || { lat: 0, lng: 0 },
+                  difficulty: 'beginner',
+                  scenario: 'Learn English through YouTube videos',
+                  npcRole: 'AI Learning Assistant',
+                  dialogPrompt: 'Help users learn English through YouTube videos.',
+                  image: 'https://picsum.photos/id/429/400/300',
+                  isUnlocked: true,
+                  isCompleted: false,
+                };
+                setYoutubeLearningCheckpoint(youtubeCheckpoint);
+              }}
+              className="p-3.5 rounded-full shadow-lg transition-transform active:scale-95 bg-red-500 text-white hover:bg-red-600"
+              title="YouTube Learning"
+            >
+              <Youtube className="w-6 h-6" />
+            </button>
+            
             <button
               onClick={() => setIsAddingLocation(!isAddingLocation)}
               className={`p-3.5 rounded-full shadow-lg transition-transform active:scale-95 ${
@@ -2841,6 +2881,24 @@ Ensure all content is appropriate for ${checkpoint.difficulty} level and directl
             </div>
           </div>
         </div>
+      )}
+
+      {/* YouTube Learning Modal */}
+      {youtubeLearningCheckpoint && (
+        <YouTubeLearning
+          checkpoint={youtubeLearningCheckpoint}
+          userLevel={(() => {
+            // Get user's CEFR level from stats or infer from difficulty
+            if (stats?.cefrLevel) {
+              return stats.cefrLevel;
+            }
+            // Infer from checkpoint difficulty if available
+            const checkpointDifficulty = youtubeLearningCheckpoint?.difficulty || 'beginner';
+            const cefr = DIFFICULTY_CONFIG[checkpointDifficulty]?.cefr || 'B1';
+            return cefr as CEFRLevel;
+          })()}
+          onClose={() => setYoutubeLearningCheckpoint(null)}
+        />
       )}
 
       {activeDialog && (

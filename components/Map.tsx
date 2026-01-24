@@ -18,6 +18,9 @@ interface MapProps {
 }
 
 const getCheckpointEmoji = (cp: Checkpoint): string => {
+  if (cp.type === 'youtube-learning') {
+    return '📺';
+  }
   if (cp.type === 'shop') return '🛒';
 
   const text = (cp.name + ' ' + cp.scenario).toLowerCase();
@@ -82,10 +85,27 @@ function Map({
 
   // Dynamically import Leaflet only on client side
   useEffect(() => {
-    import('leaflet').then(leaflet => {
-      // Handle both default export and namespace export
-      setL(leaflet.default || leaflet);
-    });
+    // Only import on client side
+    if (typeof window === 'undefined') return;
+    
+    import('leaflet')
+      .then(leaflet => {
+        // Handle both default export and namespace export
+        setL(leaflet.default || leaflet);
+      })
+      .catch(error => {
+        console.error('Failed to load Leaflet:', error);
+        // Retry after a short delay
+        setTimeout(() => {
+          import('leaflet')
+            .then(leaflet => {
+              setL(leaflet.default || leaflet);
+            })
+            .catch(retryError => {
+              console.error('Leaflet retry failed:', retryError);
+            });
+        }, 1000);
+      });
   }, []);
 
   // Initialize map only once
@@ -297,6 +317,7 @@ function Map({
       const isCompleted = cp.isCompleted;
       const isChallenge = cp.type === 'challenge';
       const isShop = cp.type === 'shop';
+      const isYouTubeLearning = cp.type === 'youtube-learning';
       let markerIcon: any;
 
       if (cp.customMarkerImage) {
@@ -329,6 +350,10 @@ function Map({
         if (isShop) {
           borderColor = '#f97316';
           shadowStyle = '0 2px 8px rgba(249, 115, 22, 0.3)';
+        }
+        if (isYouTubeLearning) {
+          borderColor = '#ef4444';
+          shadowStyle = '0 2px 8px rgba(239, 68, 68, 0.3)';
         }
         if (isCompleted) {
           borderColor = '#10b981';
@@ -393,7 +418,11 @@ function Map({
       let typeColor = 'bg-blue-50 text-blue-600 border-blue-100';
       let subText = `💬 ${cp.scenario}`;
 
-      if (isChallenge) {
+      if (cp.type === 'youtube-learning') {
+        typeLabel = 'YouTube Learning';
+        typeColor = 'bg-red-50 text-red-600 border-red-100';
+        subText = `<span class="text-red-700 font-medium">📺 Learn English through YouTube videos</span>`;
+      } else if (isChallenge) {
         typeLabel = 'Goal';
         typeColor = 'bg-purple-100 text-purple-700 border-purple-200';
         subText = `<span class="text-purple-700 font-medium">🎯 ${cp.challengeConfig?.goalDescription || 'Complete the challenge'}</span>`;

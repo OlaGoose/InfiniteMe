@@ -7,6 +7,18 @@ import { LA_HOLLYWOOD_CENTER, EXPLORATION_INITIAL_CHECKPOINT_IDS } from './index
  * The IDs are fixed to prevent regeneration on page refresh
  */
 export const EXPLORATION_INITIAL_CHECKPOINTS: Omit<Checkpoint, 'isUnlocked' | 'isCompleted'>[] = [
+  // YouTube Learning Checkpoint
+  {
+    id: 'youtube-learning-1',
+    name: 'YouTube English Learning Hub',
+    type: 'youtube-learning',
+    location: { lat: 34.0522, lng: -118.2437 }, // LA Hollywood area
+    difficulty: 'beginner',
+    scenario: 'Learn English through YouTube videos',
+    npcRole: 'AI Learning Assistant',
+    dialogPrompt: 'Help users learn English through YouTube videos by analyzing difficulty and recommending segments.',
+    image: 'https://picsum.photos/id/429/400/300',
+  },
   {
     id: EXPLORATION_INITIAL_CHECKPOINT_IDS[0],
     name: 'Hollywood Sign Viewpoint',

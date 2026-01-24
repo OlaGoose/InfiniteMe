@@ -5,7 +5,7 @@ export interface LatLng {
 
 export type MapStyle = 'light' | 'dark' | 'satellite';
 
-export type CheckpointType = 'chat' | 'challenge' | 'shop';
+export type CheckpointType = 'chat' | 'challenge' | 'shop' | 'youtube-learning';
 
 // Learning stages for structured learning flow
 export type LearningStage = 
@@ -158,6 +158,7 @@ export interface UserStats {
   currentLocation: LatLng;
   avatarImage?: string;
   inventory: string[];
+  cefrLevel?: CEFRLevel; // User's English level for YouTube learning
 }
 
 export interface ChatMessage {
@@ -211,4 +212,71 @@ export interface Achievement {
   description: string;
   icon: string;
   unlockedAt?: number;
+}
+
+// ========== YouTube Learning System ==========
+export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+
+export interface VideoSegment {
+  id: string;
+  startTime: number; // seconds
+  endTime: number; // seconds
+  duration: number; // seconds (15-45)
+  transcript: string;
+  subtitle: string;
+  cefrLevel: CEFRLevel;
+  difficultyScore: number; // 0-100
+  vocabularyComplexity: number; // 0-100
+  speechRate: number; // words per minute
+  sentenceComplexity: number; // 0-100 (based on clauses, tenses)
+  pronunciationClarity: number; // 0-100
+  topics: string[]; // extracted topics
+  keywords: string[]; // key vocabulary
+}
+
+export interface YouTubeVideoAnalysis {
+  videoId: string;
+  videoUrl: string;
+  title: string;
+  description: string;
+  duration: number; // total duration in seconds
+  segments: VideoSegment[];
+  hasSubtitles: boolean;
+  analyzedAt: number; // timestamp
+}
+
+export interface UserLearningProfile {
+  cefrLevel: CEFRLevel;
+  preferredTopics: string[]; // from voice input analysis
+  learningPath: 'daily' | 'workplace' | 'interest'; // daily高频 → workplace职场 → interest兴趣
+  recentSegments: string[]; // segment IDs
+}
+
+export interface RecommendedSegment extends VideoSegment {
+  relevanceScore: number; // 0-100 (topic match)
+  difficultyMatch: number; // 0-100 (how well it matches user level)
+  freshnessScore: number; // 0-100 (how new this is to user)
+  overallScore: number; // weighted: relevance 60% + difficulty 30% + freshness 10%
+}
+
+export interface ShadowReadingSession {
+  segmentId: string;
+  playbackSpeed: 0.75 | 1.0 | 1.25;
+  isLooping: boolean;
+  currentPlayCount: number;
+  userRecording?: {
+    audioUrl: string;
+    similarityScore?: number; // 0-100
+    recordedAt: number;
+  };
+}
+
+export interface YouTubeLearningCheckpoint extends Omit<Checkpoint, 'type'> {
+  type: 'youtube-learning';
+  youtubeConfig?: {
+    videoUrl?: string; // user can input
+    defaultVideoId?: string; // pre-configured
+    userLevel?: CEFRLevel; // from user stats or input
+    autoAnalyze?: boolean; // auto analyze on open
+  };
 }
